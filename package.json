@@ -36,7 +36,6 @@
 		"@stdlib/nlp-porter-stemmer": "^0.0.6",
 		"@stdlib/string-lowercase": "^0.0.7",
 		"@stdlib/types": "^0.0.13",
-		"got": "^11.8.0",
 		"micromatch": "^4.0.4",
 		"node-snowball": "^0.6.0",
 		"stdlib": "^0.6.0"

@@ -6,7 +6,7 @@ import {
     ToggleComponent,
   } from 'obsidian';
   
-import { TopicLinkingPlugin } from './main';
+import TopicLinkingPlugin from './main';
 
 export interface TopicLinkingSettings {
     pdfOverwrite: boolean;
@@ -84,8 +84,8 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.inputEl.setAttribute("type", "number");
                 text.setPlaceholder('0-100')
                     .setValue(this.plugin.settings.pdfExtractFileNumberLimit.toString())
-                    .onChange(async (value) => {
-                        this.plugin.settings.pdfExtractFileNumberLimit = Math.min(Math.max(value, 0), 1000);
+                    .onChange(async (value : string) => {
+                        this.plugin.settings.pdfExtractFileNumberLimit = Math.min(Math.max(parseInt(value), 0), 1000);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -96,8 +96,8 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.inputEl.setAttribute("type", "number");
                 text.setPlaceholder('0-100000')
                     .setValue(this.plugin.settings.pdfExtractFileSizeLimit.toString())
-                    .onChange(async (value) => {
-                        this.plugin.settings.pdfExtractFileSizeLimit = Math.min(Math.max(value, 0), 100000);
+                    .onChange(async (value : string) => {
+                        this.plugin.settings.pdfExtractFileSizeLimit = Math.min(Math.max(parseInt(value), 0), 100000);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -137,7 +137,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('1-10')
                     .setValue(this.plugin.settings.numTopics.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.numTopics = Math.min(Math.max(value, 1), 10);
+                        this.plugin.settings.numTopics = Math.min(Math.max(parseInt(value), 1), 10);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -149,7 +149,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('1-20')
                     .setValue(this.plugin.settings.numWords.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.numWords = Math.min(Math.max(value, 1), 20);
+                        this.plugin.settings.numWords = Math.min(Math.max(parseInt(value), 1), 20);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -171,7 +171,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('0.0-1.0')
                     .setValue(this.plugin.settings.topicThreshold.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.topicThreshold = Math.min(Math.max(value, 0), 1);
+                        this.plugin.settings.topicThreshold = Math.min(Math.max(parseFloat(value), 0), 1);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -186,7 +186,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('0-5000')
                     .setValue(this.plugin.settings.fixedWordLength.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.fixedWordLength = Math.min(Math.max(value, 0), 5000);
+                        this.plugin.settings.fixedWordLength = Math.min(Math.max(parseInt(value), 0), 5000);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -198,7 +198,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('1-100')
                     .setValue(this.plugin.settings.percentageTextToScan.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.percentageTextToScan = Math.min(Math.max(value, 1), 100);
+                        this.plugin.settings.percentageTextToScan = Math.min(Math.max(parseInt(value), 1), 100);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -245,7 +245,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('100-5000')
                     .setValue(this.plugin.settings.ldaIterations.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.ldaIterations = Math.min(Math.max(value, 100), 5000);
+                        this.plugin.settings.ldaIterations = Math.min(Math.max(parseInt(value), 100), 5000);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -257,7 +257,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('10-500')
                     .setValue(this.plugin.settings.ldaBurnIn.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.ldaBurnIn = Math.min(Math.max(value, 10), 500);
+                        this.plugin.settings.ldaBurnIn = Math.min(Math.max(parseInt(value), 10), 500);
                         await await this.plugin.saveSettings();
                     });
             });
@@ -269,7 +269,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 text.setPlaceholder('1-100')
                     .setValue(this.plugin.settings.ldaThin.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.ldaThin = Math.min(Math.max(value, 1), 100);
+                        this.plugin.settings.ldaThin = Math.min(Math.max(parseInt(value), 1), 100);
                         await await this.plugin.saveSettings();
                     });
             });

@@ -20,9 +20,6 @@ import porterStemmer from  '@stdlib/nlp-porter-stemmer' ;
 // For File matching
 import micromatch from 'micromatch';
 
-// For web links - replace with 'request'?
-import got from 'got';
-
 // Internal imports
 import { TopicLinkingSettings, TopicLinkingSettingTab, DEFAULT_SETTINGS } from './settings';
 
@@ -330,8 +327,7 @@ export default class TopicLinkingPlugin extends Plugin {
                             // Get web contents...
                             console.log(link)
                             try {
-                                const response = await got(link);
-                                const htmlContents = response.body;
+                                const htmlContents = await request({url: link});
                                 let titleMatch = htmlContents.match(/<title>([^<]*)<\/title>/i);
                                 let title : string = link;
                                 if (titleMatch !== null)
@@ -342,7 +338,7 @@ export default class TopicLinkingPlugin extends Plugin {
                                 let md = htmlToMarkdown(htmlContents);
                                 md = `${link}\n\n${md}`;
 
-                                let fileName: string = "Generated/" + title + ".md";
+                                let fileName: string = "Generated/Bookmarks/" + title + ".md";
                                 let file : any = vault.getAbstractFileByPath(fileName);
                                 if (file !== null) {
                                     if (this.settings.bookmarkOverwrite)
@@ -353,7 +349,7 @@ export default class TopicLinkingPlugin extends Plugin {
                                 i++;
                             }
                             catch (err) {
-                                console.log(err);
+                                // console.log(err);
                             }
 
                         });
