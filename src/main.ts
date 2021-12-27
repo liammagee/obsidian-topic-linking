@@ -1,25 +1,30 @@
 
-const { 
+import { 
     TFile, 
+    TAbstractFile, 
     Plugin,
     PluginSettingTab,
     Setting,
     debounce,
 	request,
 	loadPdfJs,
-    htmlToMarkdown } = require('obsidian');
+    htmlToMarkdown,
+    moment } from 'obsidian';
 
-const roundn = require('@stdlib/math-base-special-roundn');
-const stopwords = require('@stdlib/datasets-stopwords-en');
-const lda = require('@stdlib/nlp-lda');
-const porterStemmer = require( '@stdlib/nlp-porter-stemmer' );
-const micromatch = require('micromatch');
+// For LDA
+import roundn from '@stdlib/math-base-special-roundn';
+import stopwords from '@stdlib/datasets-stopwords-en';
+import lda from '@stdlib/nlp-lda';
+import porterStemmer from  '@stdlib/nlp-porter-stemmer' ;
+
+// For File matching
+import micromatch from 'micromatch';
 
 // For web links - replace with 'request'?
-const got = require('got');
+import got from 'got';
 
+// Internal imports
 import { TopicLinkingSettings, TopicLinkingSettingTab, DEFAULT_SETTINGS } from './settings';
-
 
 
 export default class TopicLinkingPlugin extends Plugin {
@@ -37,7 +42,7 @@ export default class TopicLinkingPlugin extends Plugin {
 		/**
 		 * Extracts text from a PDF file.
 		 */
-        const getContent = async (file : typeof TFile, counter : number) => {
+        const getContent = async (file : TFile, counter : number) => {
 
 			const { vault } = this.app;
 
@@ -78,7 +83,10 @@ export default class TopicLinkingPlugin extends Plugin {
 		 * @param file
 		 */
 		const makeSubFolders = (files : Array<TFile>) => {
-			files.map(async (file) => {
+
+            const { vault } = this.app;
+
+            files.map(async (file) => {
 				const subPath = subPathFactory(file, "PDFs/".length);
 				if (subPath.length > 0) {
 					try {
@@ -226,9 +234,9 @@ export default class TopicLinkingPlugin extends Plugin {
 
 			// console.log(markdownContents.substring(0, 500));
 			let fileName: string = `Generated/${subPath}${file.basename}.md`;
-			let newFile: TFile = vault.getAbstractFileByPath(fileName);
-			// console.log(fileName);
-			if (newFile !== null)
+			let newFile: any = vault.getAbstractFileByPath(fileName);
+
+            if (newFile !== null)
 				await vault.modify(newFile, markdownContents);
 			else
 				await vault.create(fileName, markdownContents);
@@ -278,7 +286,7 @@ export default class TopicLinkingPlugin extends Plugin {
 				makeSubFolders(files);
 
                 files.map(async (file : TFile, index : number) => {
-                    const delayedProcessing = debounce((fileToProcess, i) => {
+                    const delayedProcessing = debounce((fileToProcess : TFile, i : number) => {
                         processPDF(fileToProcess, i);
                     }, 100, true);
                     await delayedProcessing(file, index + 1);
@@ -324,11 +332,10 @@ export default class TopicLinkingPlugin extends Plugin {
                             try {
                                 const response = await got(link);
                                 const htmlContents = response.body;
-                                let title = htmlContents.match(/<title>([^<]*)<\/title>/i);
-                                if (title === null)
-                                    title = link;
-                                else
-                                    title = title[1];
+                                let titleMatch = htmlContents.match(/<title>([^<]*)<\/title>/i);
+                                let title : string = link;
+                                if (titleMatch !== null)
+                                    title = titleMatch[1];
                                 title = title.trim().replace(/[\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*+,\/:;<=>?@\[\]^`{|}~]/g, '-');
 
                                 // let md = NodeHtmlMarkdown.translate(htmlContents);
@@ -336,16 +343,13 @@ export default class TopicLinkingPlugin extends Plugin {
                                 md = `${link}\n\n${md}`;
 
                                 let fileName: string = "Generated/" + title + ".md";
-                                let file : TFile = vault.getAbstractFileByPath(fileName);
-                                if (this.settings.bookmarkOverwrite) {
-                                    vault.delete(file);
-                                }
-                                else {
-                                    if (file !== null)
+                                let file : any = vault.getAbstractFileByPath(fileName);
+                                if (file !== null) {
+                                    if (this.settings.bookmarkOverwrite)
                                         vault.modify(file, md);
-                                    else
-                                        vault.create(fileName, md);
                                 }
+                                else
+                                    vault.create(fileName, md);
                                 i++;
                             }
                             catch (err) {
@@ -395,15 +399,12 @@ export default class TopicLinkingPlugin extends Plugin {
                 // TODO: Add weblinks here...
 
                 // Add stop words
-                let words = stopwords();
-                for (let i = 0; i < words.length; i++) {
-                    words[i] = new RegExp('\\b' + words[i] + '\\b', 'gi');
-                }
+                let words : string[] = stopwords();
+                let wordRegexes : RegExp[] = words.map(word => { return new RegExp('\\b' + word + '\\b', 'gi'); });
+
                 // Add other stop words
                 let extendedStops = ['©', 'null', 'obj', 'pg', 'de', 'et', 'la', 'le', 'el', 'que', 'dont', 'flotr2', 'mpg', 'ibid', 'pdses'];
-                for (let i = 0; i < extendedStops.length; i++) {
-                    words.push(new RegExp('\\b' + extendedStops[i] + '\\b', 'gi'));
-                }
+                extendedStops.forEach(word => { wordRegexes.push(new RegExp('\\b' + word + '\\b', 'gi')) });
 
                 // Retrieve all file contents
                 const fileContents: string[] = await Promise.all(files.map((file) => vault.cachedRead(file)));
@@ -432,10 +433,8 @@ export default class TopicLinkingPlugin extends Plugin {
 
                     document = document.toLowerCase()
                         .replace(/[\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()\*+,\-.\/:;<=>?@\[\]^_`{|}~]/g, '')
-                        .replace(/\b\d{1,}\b/g, '')
-                    for (let j = 0; j < words.length; j++) {
-                        document = document.replace(words[j], '');
-                    }
+                        .replace(/\b\d{1,}\b/g, '');
+                    wordRegexes.forEach(word => { document = document.replace(word, '') });
                     document = document.replace(/\s{2,}/g, ' ');
 
                     if (this.settings.stemming)
@@ -445,23 +444,23 @@ export default class TopicLinkingPlugin extends Plugin {
                 });
 
                 // Do the LDA model fitting
-                let num_topics = this.settings.numTopics;
-                let num_words = this.settings.numWords;
-                let threshold = this.settings.topicThreshold;
-                let iterations = this.settings.ldaIterations;
-                let burnin = this.settings.ldaBurnIn;
-                let thin = this.settings.ldaThin;
+                const numTopics = this.settings.numTopics;
+                const numWords = this.settings.numWords;
+                const threshold = this.settings.topicThreshold;
+                const iterations = this.settings.ldaIterations;
+                const burnin = this.settings.ldaBurnIn;
+                const thin = this.settings.ldaThin;
 
-                statusBarItemEl.setText('Finding ' + num_topics + ' topics to meet ' + threshold + '...');
+                statusBarItemEl.setText('Finding ' + numTopics + ' topics to meet ' + threshold + '...');
 
-                const lda_model = lda(documents, num_topics);
-                lda_model.fit(iterations, burnin, thin);
+                const ldaModel : any = lda(documents, numTopics);
+                ldaModel.fit(iterations, burnin, thin);
 
                 // Create an array of topics with links to documents that meet the threshold
-                let topicDocs = new Array(num_topics);
-                for (var j = 0; j < num_topics; j++) {
+                let topicDocs = new Array(numTopics);
+                for (var j = 0; j < numTopics; j++) {
                     for (var i = 0; i < documents.length; i++) {
-                        let score = roundn(lda_model.avgTheta.get(i, j), -3);
+                        let score = roundn(ldaModel.avgTheta.get(i, j), -3);
                         if (score > threshold) {
                             if (topicDocs[j] === undefined)
                                 topicDocs[j] = [];
@@ -472,13 +471,13 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 // Generate the list of topic strings
                 let topicStrings = [];
-                for (var j = 0; j < num_topics; j++) {
-                    let terms = lda_model.getTerms(j, num_words);
-                    let topicString = `Topic ${j + 1} - ${terms.map(t => t.word).join('-')}`;
+                for (var j = 0; j < numTopics; j++) {
+                    let terms = ldaModel.getTerms(j, numWords);
+                    let topicString = `Topic ${j + 1} - ${terms.map((t : any) => t.word).join('-')}`;
                     topicStrings.push(topicString);
                 }
 
-                statusBarItemEl.setText(`Creating topic files with ${num_words} per topic...`);
+                statusBarItemEl.setText(`Creating topic files with ${numWords} per topic...`);
 
 
                 let topicDir = `Topics`;
@@ -495,9 +494,9 @@ export default class TopicLinkingPlugin extends Plugin {
                 }
 
                 // Create the topic files
-                for (var j = 0; j < num_topics; j++) {
+                for (var j = 0; j < numTopics; j++) {
 
-                    let terms = lda_model.getTerms(j, num_words);
+                    let terms = ldaModel.getTerms(j, numWords);
                     // No associated terms - move on
                     if (terms[0].word === undefined)
                         continue;
@@ -529,7 +528,7 @@ export default class TopicLinkingPlugin extends Plugin {
                     fileText += `## Links \n\n`;
                     let thisTopicDocs = topicDocs[j];
                     if (thisTopicDocs !== undefined) {
-                        thisTopicDocs.sort((td1, td2) => { return (td1.score > td2.score ? -1 : (td1.score < td2.score ? 1 : 0)) })
+                        thisTopicDocs.sort((td1 : any, td2 : any) => { return (td1.score > td2.score ? -1 : (td1.score < td2.score ? 1 : 0)) })
                         for (var k = 0; k < thisTopicDocs.length; k++) {
                             let { doc, score } = thisTopicDocs[k];
                             fileText += ` - [[${doc}]] [relevance: ${score.toPrecision(2)}]`;
@@ -541,7 +540,7 @@ export default class TopicLinkingPlugin extends Plugin {
                     }
 
                     try {
-                        let file: TFile = vault.getAbstractFileByPath(fileName);
+                        let file : any = vault.getAbstractFileByPath(fileName);
                         if (file !== undefined && file !== null)
                             vault.modify(file, fileText);
                         else
@@ -557,7 +556,7 @@ export default class TopicLinkingPlugin extends Plugin {
                 let topicFileText: string = `# Topic Index\n\n`;
                 topicFileText += `Results based on scanning files that match: *${topicPathPattern}*.\n\n`;
                 topicFileText += `## Topics \n\n`;
-                for (var j = 0; j < num_topics; j++) {
+                for (var j = 0; j < numTopics; j++) {
                     topicFileText += ` - [[${topicStrings[j]}]]\n`;
                     // topicFileText += ` - [[${topicDir}/${topicStrings[j]}]]\n`;
                 }
@@ -569,7 +568,7 @@ export default class TopicLinkingPlugin extends Plugin {
                     topicFileText += `- [ ] [[${fileNames[j]}]]\n`;
                 }
 
-                let topicFile : typeof TFile = vault.getAbstractFileByPath(topicFileName);
+                let topicFile : any = vault.getAbstractFileByPath(topicFileName);
                 if (topicFile !== undefined && topicFile !== null)
                     vault.modify(topicFile, topicFileText);
                 else

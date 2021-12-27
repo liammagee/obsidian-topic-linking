@@ -16,6 +16,7 @@
 	"author": "Liam Magee",
 	"license": "MIT",
 	"devDependencies": {
+		"@types/micromatch": "^4.0.2",
 		"@types/node": "^16.11.6",
 		"@typescript-eslint/eslint-plugin": "^5.2.0",
 		"@typescript-eslint/parser": "^5.2.0",
@@ -34,6 +35,7 @@
 		"@stdlib/nlp-lda": "^0.0.6",
 		"@stdlib/nlp-porter-stemmer": "^0.0.6",
 		"@stdlib/string-lowercase": "^0.0.7",
+		"@stdlib/types": "^0.0.13",
 		"got": "^11.8.0",
 		"micromatch": "^4.0.4",
 		"node-snowball": "^0.6.0",
