@@ -3,7 +3,7 @@
 	"name": "Topic Linking",
 	"version": "0.0.1",
 	"minAppVersion": "0.12.0",
-	"description": "This is a plugin for converting PDF files and web links to Markdown, and creating topics from Markdown content.",
+	"description": "Convert PDF files and web links to Markdown, and create topics from Markdown.",
 	"author": "Liam Magee",
 	"authorUrl": "https://www.westernsydney.edu.au/ics/people/researchers/liam_magee",
 	"isDesktopOnly": false
