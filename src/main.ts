@@ -96,6 +96,23 @@ export default class TopicLinkingPlugin extends Plugin {
 			});
 		};
 
+        
+        /**
+         * Taken (and inverted) from https://stackoverflow.com/questions/7033639/split-large-string-in-n-size-chunks-in-javascript/29202760#29202760
+         * @param str
+         * @param size 
+         * @returns 
+         */
+        const chunkSubstring = (str : string, num : number) => {
+            const sizeChunks = Math.ceil(str.length / num);
+            const chunks = new Array(num);
+          
+            for (let i = 0, o = 0; i < num; ++i, o += sizeChunks) {
+              chunks[i] = str.substring(o, o+sizeChunks);
+            }
+          
+            return chunks;
+        }
 
         /**
          * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
@@ -229,14 +246,30 @@ export default class TopicLinkingPlugin extends Plugin {
 			let markdownContents = markdownStrings.join('');
 			markdownContents = `Source file: [[${file.path}]]\n\n${markdownContents}`;
 
-			// console.log(markdownContents.substring(0, 500));
 			let fileName: string = `Generated/${subPath}${file.basename}.md`;
-			let newFile: any = vault.getAbstractFileByPath(fileName);
-
-            if (newFile !== null)
-				await vault.modify(newFile, markdownContents);
-			else
-				await vault.create(fileName, markdownContents);
+            const byteLength = Buffer.byteLength(markdownContents, 'utf-8');
+            const kb = Math.ceil(byteLength / 1024);
+            if (kb > this.settings.pdfExtractFileSizeLimit && this.settings.pdfExtractFileSizeLimit > 0 && this.settings.pdfExtractChunkIfFileExceedsLimit === true) {
+                // Create a chunk size approximately half the maximum size
+                let chunkNum = Math.ceil(byteLength / (this.settings.pdfExtractFileSizeLimit * 1024 * 0.5));
+                // Split the contents into approximately equal segments
+                const segments = chunkSubstring(markdownContents, chunkNum);
+                for (let i = 0; i < segments.length; i++) {
+                    const segmentPath = `Generated/${subPath}${file.basename}_${i+1}.md`;
+                    let newSegmentFile: any = vault.getAbstractFileByPath(segmentPath);
+                    if (newSegmentFile !== null)
+                        await vault.modify(newSegmentFile, segments[i]);
+                    else
+                        await vault.create(segmentPath, segments[i]);
+                }
+            }
+            else {
+                let newFile: any = vault.getAbstractFileByPath(fileName);
+                if (newFile !== null)
+                    await vault.modify(newFile, markdownContents);
+                else
+                    await vault.create(fileName, markdownContents);
+            }
 		};
 
   
@@ -252,24 +285,34 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 const fileNumberLimit = this.settings.pdfExtractFileNumberLimit;
                 const fileSizeLimit = this.settings.pdfExtractFileSizeLimit;
+                const chunkIfFileExceedsLimit = this.settings.pdfExtractChunkIfFileExceedsLimit;
                 const pdfOverwrite = this.settings.pdfOverwrite === true;
                 console.log(`File number limit: ${fileNumberLimit}`);
                 console.log(`File size limit: ${fileSizeLimit}`);
+                console.log(`Chunk if file exceeds limit: ${chunkIfFileExceedsLimit}`);
                 console.log(`Overwrite exising files: ${pdfOverwrite}`);
-                
 
                 // Obtain a set of PDF files - don't include those that have already been generated
                 let files: TFile[] = vault.getFiles().filter((file) => {
                     let matches = false;
                     if (file.extension === 'pdf' && file.path.indexOf('PDFs/') > -1) {
-                        if (fileSizeLimit > 0 && file.stat.size * 1000 > fileSizeLimit)
+                        if (chunkIfFileExceedsLimit === false && fileSizeLimit > 0 && file.stat.size * 1024 > fileSizeLimit)
                             matches = false;
                         else if (!pdfOverwrite) {
                             let subPath = subPathFactory(file, "PDFs/".length);
                             let mdFile = `Generated/${subPath}${file.basename}.md`;
                             let mdVersion = vault.getAbstractFileByPath(mdFile);
-                            if (mdVersion === null)
-                                matches = true;
+                            if (mdVersion === null) {
+                                if (chunkIfFileExceedsLimit === true) {
+                                    // 2nd check - for large files that may have been chunked down
+                                    mdFile = `Generated/${subPath}${file.basename}_1.md`;
+                                    mdVersion = vault.getAbstractFileByPath(mdFile);
+                                    if (mdVersion === null) 
+                                        matches = true;
+                                }
+                                else
+                                    matches = true;
+                            }
                         }
                         else
                             matches = true;

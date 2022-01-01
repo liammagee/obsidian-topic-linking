@@ -12,6 +12,7 @@ export interface TopicLinkingSettings {
     pdfOverwrite: boolean;
     pdfExtractFileNumberLimit: number;
     pdfExtractFileSizeLimit: number;
+    pdfExtractChunkIfFileExceedsLimit: boolean;
     bookmarkOverwrite: boolean;
     topicPathPattern: string;
     numTopics: number;
@@ -32,7 +33,8 @@ export interface TopicLinkingSettings {
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfOverwrite: false,
     pdfExtractFileNumberLimit: 0,
-    pdfExtractFileSizeLimit: 0,
+    pdfExtractFileSizeLimit: 5000,
+    pdfExtractChunkIfFileExceedsLimit: true,
     bookmarkOverwrite: false,
     topicPathPattern: 'Generated/',
     numTopics: 5,
@@ -74,7 +76,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.pdfOverwrite)
                     .onChange(async (value) => {
                         this.plugin.settings.pdfOverwrite = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -86,7 +88,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.pdfExtractFileNumberLimit.toString())
                     .onChange(async (value : string) => {
                         this.plugin.settings.pdfExtractFileNumberLimit = Math.min(Math.max(parseInt(value), 0), 1000);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -98,7 +100,18 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.pdfExtractFileSizeLimit.toString())
                     .onChange(async (value : string) => {
                         this.plugin.settings.pdfExtractFileSizeLimit = Math.min(Math.max(parseInt(value), 0), 100000);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Chunk file if size exceeds limit')
+            .setDesc('Chunks, or breaks down the resulting file if it exceeds *Limit file size*.')
+            .addToggle((toggle) => {
+                // toggle.inputEl.setAttribute("type", "boolean");
+                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                    .onChange(async (value) => {
+                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        await this.plugin.saveSettings();
                     });
             });
 
@@ -111,7 +124,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.bookmarkOverwrite)
                     .onChange(async (value) => {
                         this.plugin.settings.bookmarkOverwrite = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
 
@@ -126,7 +139,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.topicPathPattern.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.topicPathPattern = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -138,7 +151,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.numTopics.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.numTopics = Math.min(Math.max(parseInt(value), 1), 10);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -150,7 +163,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.numWords.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.numWords = Math.min(Math.max(parseInt(value), 1), 20);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -160,7 +173,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.stemming)
                     .onChange(async (value) => {
                         this.plugin.settings.stemming = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -172,14 +185,14 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.topicThreshold.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.topicThreshold = Math.min(Math.max(parseFloat(value), 0), 1);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
 
         containerEl.createEl('h4', { text: 'Source Text Filtering' });
 
         new Setting(containerEl)
-            .setName('Fixed Number of Words')
+            .setName('Fixed number of words')
             .setDesc('Enter the number of words to extract from the text. Overrides \'Percentage of Total Text\' below.')
             .addText((text) => {
                 text.inputEl.setAttribute("type", "number");
@@ -187,11 +200,11 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.fixedWordLength.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.fixedWordLength = Math.min(Math.max(parseInt(value), 0), 5000);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
-            .setName('Percentage of Total Text')
+            .setName('Percentage of total text')
             .setDesc('Enter the percentage of the total text to scan. ')
             .addText((text) => {
                 text.inputEl.setAttribute("type", "number");
@@ -199,7 +212,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.percentageTextToScan.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.percentageTextToScan = Math.min(Math.max(parseInt(value), 1), 100);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -209,7 +222,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.wordSelectionRandom)
                     .onChange(async (value) => {
                         this.plugin.settings.wordSelectionRandom = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
 
@@ -221,7 +234,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.topicIncludePattern)
                     .onChange(async (value) => {
                         this.plugin.settings.topicIncludePattern = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
@@ -231,7 +244,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.topicIncludeTimestamp)
                     .onChange(async (value) => {
                         this.plugin.settings.topicIncludeTimestamp = value;
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
 
@@ -246,11 +259,11 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.ldaIterations.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.ldaIterations = Math.min(Math.max(parseInt(value), 100), 5000);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
-            .setName('LDA Burn In')
+            .setName('LDA burn in')
             .setDesc('Enter the number of estimates to discard at the first iteration')
             .addText((text) => {
                 text.inputEl.setAttribute("type", "number");
@@ -258,11 +271,11 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.ldaBurnIn.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.ldaBurnIn = Math.min(Math.max(parseInt(value), 10), 500);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
         new Setting(containerEl)
-            .setName('LDA Thin')
+            .setName('LDA thin')
             .setDesc('Enter the number of estimates to discard at every other iteration')
             .addText((text) => {
                 text.inputEl.setAttribute("type", "number");
@@ -270,7 +283,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.ldaThin.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.ldaThin = Math.min(Math.max(parseInt(value), 1), 100);
-                        await await this.plugin.saveSettings();
+                        await this.plugin.saveSettings();
                     });
             });
     }

@@ -21,9 +21,10 @@ Some of these folders can be configured under *Settings*.
 Two commands convert PDF and web links to Markdown files located in a folder called *Generated/*.
 
 The *Extract PDF Content* command uses *Obsidian*'s built-in PDF parser to convert a vault's PDFs to Markdown. The conversion is highly simplified and approximate, but results should still be legible. The command takes three options:
-- *Overwrite PDF-Generated Content*: whether to overwrite existing Markdown files with the same name
-- *Limit File Number*: the maximum number of files to process (failing to set this can result in *Obsidian* running out of memory for large repositories)
-- *Limit File Size*: the maximum size of files to process (again, to avoid memory issues)
+- *Overwrite PDF-generated content*: whether to overwrite existing Markdown files with the same name
+- *Limit file number*: the maximum number of files to process (failing to set this can result in *Obsidian* running out of memory for large repositories)
+- *Limit file size*: the maximum size of files to process. The meaning of 'file' (either the PDF source or generated Markdown) depends upon whether *Chunk file if size exceeds limit* is set. 
+- *Chunk file if size exceeds limit*: if *Limit file size* is set, and Markdown files greater than this size are likely to be produced, the command will instead try to split the generated text across multiple smaller files. 
 
 The *Extract Web Link-Generated Content* command scans a folder (the default is named *Bookmarks*) for web links - anything beginning with *http(s)://*. It also takes an *Overwrite* parameter:
 - *Overwrite Web Links*: whether to overwrite existing Markdown files with the same name
@@ -31,25 +32,25 @@ The *Extract Web Link-Generated Content* command scans a folder (the default is 
 ### The *Link Topics* Command
 
 The command at the heart of the plugin is *Link Topics*. This takes a pattern setting, *Topic File Pattern*, to scan Markdown files for topics. A number of other settings condition how those files are scanned, how the LDA model is trained, and how the results of the model are then formatted. Here are the general  parameters for the command:
-- *Topic File Pattern*: a *glob* style pattern for locating Markdown files for the model
-- *Number of Topics*: how many topics to generate
-- *Number of Words*: how many words to include for each topic
+- *Topic file pattern*: a *glob* style pattern for locating Markdown files for the model
+- *Number of topics*: how many topics to generate
+- *Number of words*: how many words to include for each topic
 - *Stemming*: whether scanned tokens should be stemmed (e.g. 'capital' becomes 'capit')
-- *Topic Threshold*: what probability (between 0 and 1) a document must have to be relevant to a given topic
+- *Topic threshold*: what probability (between 0 and 1) a document must have to be relevant to a given topic
 
 Other parameters condition how the Markdown files are sampled:
-- *Fixed Number of Words*: select just a subset of each Markdown file, based on a fixed number of words
-- *Percentage of Total Text*: select just a subset of each Markdown file, based on a percentage of the file's text (overriden by any non-zero value for *Fixed Number of Words*)
-- *Randomise Text*: if either *Fixed Number of Words* or *Percentage of Total Text* are selected, randomised whether these samples are drawn randomly.
+- *Fixed number of words*: select just a subset of each Markdown file, based on a fixed number of words
+- *Percentage of total text*: select just a subset of each Markdown file, based on a percentage of the file's text (overriden by any non-zero value for *Fixed Number of Words*)
+- *Randomise text*: if either *Fixed Number of Words* or *Percentage of Total Text* are selected, randomised whether these samples are drawn randomly.
 
 The *Topic* folder can include either or both of the file pattern or current timestamp:
-- *Include Pattern in Topic Folder
-- *Include Timestamp in Topic Folder
+- *Include pattern in topic folder
+- *Include timestamp in topic folder
 
 Finally, the training parameters of the LDA model can be conditioned, as described in the [stdlib lda documentation](https://www.npmjs.com/package/@stdlib/nlp-lda):
-- *LDA Iterations*: Number of training iterations
-- *LDA Burn In*: Number of candidates initially discarded
-- *LDA Thin*: Number of candidates discarded at each subsequent iteration
+- *LDA iterations*: Number of training iterations
+- *LDA burn in*: Number of candidates initially discarded
+- *LDA thin*: Number of candidates discarded at each subsequent iteration
 
  
 ### Sample use
