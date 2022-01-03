@@ -17,6 +17,7 @@ import { TopicLinkingSettings } from './settings';
 export class TopicLinker {
 
     async link(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
+
         let topicPathPattern = settings.topicPathPattern;
 
         console.log(`Number of topics: ${settings.numTopics}`);

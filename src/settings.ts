@@ -43,7 +43,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     topicThreshold: 0.5,
     fixedWordLength: 1000,
     percentageTextToScan: 5,
-    wordSelectionRandom: false,
+    wordSelectionRandom: true,
     topicIncludePattern: false,
     topicIncludeTimestamp: false,
     ldaIterations: 1000,
