@@ -3,7 +3,8 @@
 This is a plugin for converting PDF files and web links to Markdown, and creating topics from Markdown content.
 
 **Note:** This plugin is highly experimental, and can have unintended consequences on existing vaults.
-Use with caution, and with test vaults where consequences are non-destructive.
+Use with caution, and with test vaults where consequences are non-destructive. 
+
 
 The plugin is designed to help with common tasks associated with research. Often researchers will build large repositories of PDFs and links, not easily organised by a single folder or tagging system. The plugin uses the [stdlib](https://github.com/stdlib-js/stdlib) implementation of [LDA](https://en.wikipedia.org/wiki/Latent_Dirichlet_allocation) (Latent Dirichlet  allocation) to scan Markdown text for common topics and keywords. It will produces a folder (by default, *Topics*) that contains an index and a series of individual files that link to documents relevant to related topics. 
 
@@ -20,7 +21,7 @@ Some of these folders can be configured under *Settings*.
 
 Two commands convert PDF and web links to Markdown files located in a folder called *Generated/*.
 
-The *Extract PDF Content* command uses *Obsidian*'s built-in PDF parser to convert a vault's PDFs to Markdown. The conversion is highly simplified and approximate, but results should still be legible. The command takes three options:
+The *Extract PDF Content* command uses *Obsidian*'s built-in PDF parser to convert a vault's PDFs to Markdown. The conversion is highly simplified and approximate, to produce a stream of text for the topic linking command. However results should still be humanly legible. The command takes three options:
 - *Overwrite PDF-generated content*: whether to overwrite existing Markdown files with the same name
 - *Limit file number*: the maximum number of files to process (failing to set this can result in *Obsidian* running out of memory for large repositories)
 - *Limit file size*: the maximum size of files to process. The meaning of 'file' (either the PDF source or generated Markdown) depends upon whether *Chunk file if size exceeds limit* is set. 
