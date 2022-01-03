@@ -4,11 +4,12 @@ import {
 	debounce, 
     loadPdfJs } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
-import { generatedDir, pdfDir } from './constants';
 
 
 export class PDFContentExtractor {
     pdfjs: any;
+    generatedPath: string;
+    pdfPath: string;
 
     /**
      * Extracts text from a PDF file.
@@ -53,10 +54,10 @@ export class PDFContentExtractor {
      */
     makeSubFolders = (vault: Vault, files : Array<TFile>) => {
         files.map(async (file) => {
-            const subPath = this.subPathFactory(file, pdfDir.length);
+            const subPath = this.subPathFactory(file, this.pdfPath.length);
             if (subPath.length > 0) {
                 try {
-                    const folderLoc = `${generatedDir}/${subPath}`;
+                    const folderLoc = `${this.generatedPath}${subPath}`;
                     await vault.createFolder(folderLoc);
                 } 
                 catch (err) { // Ignore errors here - no way of testing for existing files
@@ -92,7 +93,7 @@ export class PDFContentExtractor {
 
         const pages: Array<any> = await this.getContent(vault, file, fileCounter);
 
-        let subPath = this.subPathFactory(file, pdfDir.length);
+        let subPath = this.subPathFactory(file, this.pdfPath.length);
         let minH = -1, maxH = -1, totalH = 0, counterH = 0, meanH = 0;
         pages.forEach((page) => {
             page.items.forEach((item:any) => {
@@ -214,7 +215,7 @@ export class PDFContentExtractor {
         let markdownContents = markdownStrings.join('');
         markdownContents = `Source file: [[${file.path}]]\n\n${markdownContents}`;
 
-        let fileName: string = `${generatedDir}/${subPath}${file.basename}.md`;
+        let fileName: string = `${this.generatedPath}${subPath}${file.basename}.md`;
         const byteLength = Buffer.byteLength(markdownContents, 'utf-8');
         const kb = Math.ceil(byteLength / 1024);
         if (kb > settings.pdfExtractFileSizeLimit && settings.pdfExtractFileSizeLimit > 0 && settings.pdfExtractChunkIfFileExceedsLimit === true) {
@@ -223,7 +224,7 @@ export class PDFContentExtractor {
             // Split the contents into approximately equal segments
             const segments = this.chunkSubstring(markdownContents, chunkNum);
             for (let i = 0; i < segments.length; i++) {
-                const segmentPath = `${generatedDir}/${subPath}${file.basename}_${i+1}.md`;
+                const segmentPath = `${this.generatedPath}${subPath}${file.basename}_${i+1}.md`;
                 let newSegmentFile: any = vault.getAbstractFileByPath(segmentPath);
                 if (newSegmentFile !== null)
                     await vault.modify(newSegmentFile, segments[i]);
@@ -247,6 +248,8 @@ export class PDFContentExtractor {
 
         statusBarItemEl.setText(`Extracting Markdown text from PDF files...`);
 
+        this.generatedPath = settings.generatedPath;
+        this.pdfPath = settings.pdfPath;
         const fileNumberLimit = settings.pdfExtractFileNumberLimit;
         const fileSizeLimit = settings.pdfExtractFileSizeLimit;
         const chunkIfFileExceedsLimit = settings.pdfExtractChunkIfFileExceedsLimit;
@@ -259,17 +262,17 @@ export class PDFContentExtractor {
         // Obtain a set of PDF files - don't include those that have already been generated
         let files: TFile[] = vault.getFiles().filter((file) => {
             let matches = false;
-            if (file.extension === 'pdf' && file.path.indexOf(pdfDir) > -1) {
+            if (file.extension === 'pdf' && file.path.indexOf(this.pdfPath) > -1) {
                 if (chunkIfFileExceedsLimit === false && fileSizeLimit > 0 && file.stat.size * 1024 > fileSizeLimit)
                     matches = false;
                 else if (!pdfOverwrite) {
-                    let subPath = this.subPathFactory(file, pdfDir.length);
-                    let mdFile = `${generatedDir}/${subPath}${file.basename}.md`;
+                    let subPath = this.subPathFactory(file, this.pdfPath.length);
+                    let mdFile = `${this.generatedPath}${subPath}${file.basename}.md`;
                     let mdVersion = vault.getAbstractFileByPath(mdFile);
                     if (mdVersion === null) {
                         if (chunkIfFileExceedsLimit === true) {
                             // 2nd check - for large files that may have been chunked down
-                            mdFile = `${generatedDir}/${subPath}${file.basename}_1.md`;
+                            mdFile = `${this.generatedPath}${subPath}${file.basename}_1.md`;
                             mdVersion = vault.getAbstractFileByPath(mdFile);
                             if (mdVersion === null) 
                                 matches = true;

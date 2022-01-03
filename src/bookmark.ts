@@ -4,20 +4,23 @@ import {
 	request,
     htmlToMarkdown } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
-import { generatedDir, bookmarkDir } from './constants';
-
 
 export class BookmarkContentExtractor {
+    generatedPath: string;
+    bookmarkPath: string;
 
     async deleteBookmarks(vault: Vault) {
         let filesToDelete: TFile[] = vault.getFiles().
-            filter((file : TFile) => file.path.indexOf(`${generatedDir}/${bookmarkDir}`) > -1 && file.extension === 'md');
+            filter((file : TFile) => file.path.indexOf(`${this.generatedPath}${this.bookmarkPath}`) > -1 && file.extension === 'md');
         for (let i = 0; i < filesToDelete.length; i++)
             await vault.delete(filesToDelete[i]);        
     }
 
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
     
+        this.generatedPath = settings.generatedPath;
+        this.bookmarkPath = settings.bookmarkPath;
+
         statusBarItemEl.setText('Retrieving web content as markdown...');
 
         // If overwrite is enabled, delete all existing markdown files
@@ -25,7 +28,7 @@ export class BookmarkContentExtractor {
             this.deleteBookmarks(vault);
 
         // Get all files in the vault
-        const files : TFile[] = vault.getMarkdownFiles().filter((file : TFile) => file.path.indexOf('Bookmarks/') > -1);
+        const files : TFile[] = vault.getMarkdownFiles().filter((file : TFile) => file.path.indexOf(this.bookmarkPath) > -1);
         const fileContents: string[] = await Promise.all(files.map((file) => vault.cachedRead(file)));
 
         fileContents.forEach((contents) => {
@@ -65,7 +68,7 @@ export class BookmarkContentExtractor {
                     md = `${link}\n\n${md}`;
 
                     // Create the file
-                    let fileName: string = `${generatedDir}/${bookmarkDir}/${title}.md`;
+                    let fileName: string = `${this.generatedPath}${this.bookmarkPath}${title}.md`;
                     let file : any = vault.getAbstractFileByPath(fileName);
                     try {
                             if (file !== null) {

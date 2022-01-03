@@ -9,10 +9,13 @@ import {
 import TopicLinkingPlugin from './main';
 
 export interface TopicLinkingSettings {
+    generatedPath: string;
+    pdfPath: string;
     pdfOverwrite: boolean;
     pdfExtractFileNumberLimit: number;
     pdfExtractFileSizeLimit: number;
     pdfExtractChunkIfFileExceedsLimit: boolean;
+    bookmarkPath: string;
     bookmarkOverwrite: boolean;
     topicPathPattern: string;
     numTopics: number;
@@ -31,10 +34,13 @@ export interface TopicLinkingSettings {
 }
 
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
+    generatedPath: 'Generated/',
+    pdfPath: 'PDFs/',
     pdfOverwrite: false,
     pdfExtractFileNumberLimit: 0,
     pdfExtractFileSizeLimit: 5000,
     pdfExtractChunkIfFileExceedsLimit: true,
+    bookmarkPath: 'Bookmarks/',
     bookmarkOverwrite: false,
     topicPathPattern: 'Generated/',
     numTopics: 5,
