@@ -21,11 +21,11 @@ export class TopicLinker {
 
     async link(app: App, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
 
-        let { vault } = app;
+        const { vault } = app;
 
-        let topicPathPattern = settings.topicPathPattern;
-        let topicSearchPattern = settings.topicSearchPattern;
-        let topicTagPattern = settings.topicTagPattern;
+        const topicPathPattern = settings.topicPathPattern;
+        const topicSearchPattern = settings.topicSearchPattern;
+        const topicTagPattern = settings.topicTagPattern;
 
         console.log(`Number of topics: ${settings.numTopics}`);
         console.log(`Number of words: ${settings.numWords}`);
@@ -48,7 +48,7 @@ export class TopicLinker {
             const topicSearchFunc = prepareSimpleSearch(topicSearchPattern);
 
             // Search through each matching file
-            let resultingFiles: TFile[] = [];
+            const resultingFiles: TFile[] = [];
             // let results: any[] = [];
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
@@ -68,7 +68,7 @@ export class TopicLinker {
             const topicTags : string[] = topicTagPattern.split(' ');
 
             // Search through each matching file
-            let resultingFiles: TFile[] = [];
+            const resultingFiles: TFile[] = [];
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
                 const cm = app.metadataCache.getFileCache(file);
@@ -90,28 +90,28 @@ export class TopicLinker {
         }
 
         // Get PDF names for later matching
-        let pdfNames = vault.getFiles().filter(file => { return file.extension === 'pdf' }).map(file => file.basename);
+        const pdfNames = vault.getFiles().filter(file => { return file.extension === 'pdf' }).map(file => file.basename);
         // TODO: Add weblinks here...
 
         // Add stop words
-        let words : string[] = stopwords();
-        let wordRegexes : RegExp[] = words.map(word => { return new RegExp('\\b' + word + '\\b', 'gi'); });
+        const words : string[] = stopwords();
+        const wordRegexes : RegExp[] = words.map(word => { return new RegExp('\\b' + word + '\\b', 'gi'); });
 
         // Add other stop words
-        let extendedStops = ['©', 'null', 'obj', 'pg', 'de', 'et', 'la', 'le', 'el', 'que', 'dont', 'flotr2', 'mpg', 'ibid', 'pdses'];
+        const extendedStops = ['©', 'null', 'obj', 'pg', 'de', 'et', 'la', 'le', 'el', 'que', 'dont', 'flotr2', 'mpg', 'ibid', 'pdses'];
         extendedStops.forEach(word => { wordRegexes.push(new RegExp('\\b' + word + '\\b', 'gi')) });
 
         // Retrieve all file contents
         const fileContents: string[] = await Promise.all(files.map((file) => vault.cachedRead(file)));
 
         // Produce word sequences for set text amounts, without stopwords or punctuation.
-        let documents: string[] = fileContents.map((document) => {
+        const documents: string[] = fileContents.map((document) => {
 
             // Handle fixed number of words
             if (settings.fixedWordLength > 0) {
-                let totalWords = document.split(' ');
-                let wordLength = totalWords.length;
-                let scanEnd = (wordLength > settings.fixedWordLength) ? settings.fixedWordLength : wordLength;
+                const totalWords = document.split(' ');
+                const wordLength = totalWords.length;
+                const scanEnd = (wordLength > settings.fixedWordLength) ? settings.fixedWordLength : wordLength;
                 let scanStart = 0;
                 if (settings.wordSelectionRandom)
                     scanStart = Math.floor(Math.random() * (wordLength - scanEnd));
@@ -119,7 +119,7 @@ export class TopicLinker {
 
             }
             else if (settings.percentageTextToScan > 0 && settings.percentageTextToScan < 100) {
-                let scanEnd = document.length * (settings.percentageTextToScan / 100);
+                const scanEnd = document.length * (settings.percentageTextToScan / 100);
                 let scanStart = 0;
                 if (settings.wordSelectionRandom)
                     scanStart = Math.floor(Math.random() * (100 - scanEnd));
@@ -127,7 +127,7 @@ export class TopicLinker {
             }
 
             document = document.toLowerCase()
-                .replace(/[\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()\*+,\-.\/:;<=>?@\[\]^_`{|}~]/g, '')
+                .replace(/[\u2000-\u206F\u2E00-\u2E7F\\'!"#$%&()*+,\-./:;<=>?@[\]^_`{|}~]/g, '')
                 .replace(/\b\d{1,}\b/g, '');
             wordRegexes.forEach(word => { document = document.replace(word, '') });
             document = document.replace(/\s{2,}/g, ' ');
@@ -152,10 +152,10 @@ export class TopicLinker {
         ldaModel.fit(iterations, burnin, thin);
 
         // Create an array of topics with links to documents that meet the threshold
-        let topicDocs = new Array(numTopics);
-        for (var j = 0; j < numTopics; j++) {
-            for (var i = 0; i < documents.length; i++) {
-                let score = roundn(ldaModel.avgTheta.get(i, j), -3);
+        const topicDocs = new Array(numTopics);
+        for (let j = 0; j < numTopics; j++) {
+            for (let i = 0; i < documents.length; i++) {
+                const score = roundn(ldaModel.avgTheta.get(i, j), -3);
                 if (score > threshold) {
                     if (topicDocs[j] === undefined)
                         topicDocs[j] = [];
@@ -165,10 +165,10 @@ export class TopicLinker {
         }
 
         // Generate the list of topic strings
-        let topicStrings = [];
-        for (var j = 0; j < numTopics; j++) {
-            let terms = ldaModel.getTerms(j, numWords);
-            let topicString = `Topic ${j + 1} - ${terms.map((t : any) => t.word).join('-')}`;
+        const topicStrings = [];
+        for (let j = 0; j < numTopics; j++) {
+            const terms : Array<any> = ldaModel.getTerms(j, numWords);
+            const topicString = `Topic ${j + 1} - ${terms.map((t : any) => t.word).join('-')}`;
             topicStrings.push(topicString);
         }
 
@@ -177,7 +177,7 @@ export class TopicLinker {
 
         let topicDir = `Topics`;
         if (settings.topicIncludePattern)
-            topicDir += `-${topicPathPattern.replace(/[\*\/\.\ ]/g, '-').replace(/--/, '-')}`;
+            topicDir += `-${topicPathPattern.replace(/[*/. ]/g, '-').replace(/--/, '-')}`;
         if (settings.topicIncludeTimestamp)
             topicDir += `-${moment().format('YYYYMMDDhhmmss')}`;
 
@@ -189,23 +189,24 @@ export class TopicLinker {
         }
 
         // Create the topic files
-        for (var j = 0; j < numTopics; j++) {
+        for (let j = 0; j < numTopics; j++) {
 
-            let terms = ldaModel.getTerms(j, numWords);
+            const terms = ldaModel.getTerms(j, numWords);
             // No associated terms - move on
             if (terms[0].word === undefined)
                 continue;
-            let fileName: string = normalizePath(`${topicDir}/${topicStrings[j]}.md`);
 
-            let fileText: string = `# Topic ${j + 1}\n\n`;
+            const fileName: string = normalizePath(`${topicDir}/${topicStrings[j]}.md`);
+
+            let fileText = `# Topic ${j + 1}\n\n`;
             fileText += `Return to [[Topic Index]]\n\n`;
             // fileText += `Return to [[${topicDir}/Topic Index]]\n\n`;
             fileText += '## Keywords \n\n';
 
             fileText += '#### Tags \n\n';
 
-            for (var k = 0; k < terms.length; k++) {
-                let { word, prob } = terms[k];
+            for (let k = 0; k < terms.length; k++) {
+                const { word } = terms[k];
                 fileText += `#${word} `;
             }
 
@@ -213,19 +214,19 @@ export class TopicLinker {
 
             fileText += `| ${'Word'.padEnd(20)} | Probability  |\n`
             fileText += `| :${'-'.repeat(19)} | ${'-'.repeat(11)}: |\n`
-            for (var k = 0; k < terms.length; k++) {
-                let { word, prob } = terms[k];
+            for (let k = 0; k < terms.length; k++) {
+                const { word, prob } = terms[k];
                 fileText += `| **${word.padEnd(20)}** | ${prob.toPrecision(2).padEnd(11)} |\n`;
             }
 
             fileText += `\n\n`;
 
             fileText += `## Links \n\n`;
-            let thisTopicDocs = topicDocs[j];
+            const thisTopicDocs = topicDocs[j];
             if (thisTopicDocs !== undefined) {
                 thisTopicDocs.sort((td1 : any, td2 : any) => { return (td1.score > td2.score ? -1 : (td1.score < td2.score ? 1 : 0)) })
-                for (var k = 0; k < thisTopicDocs.length; k++) {
-                    let { doc, score } = thisTopicDocs[k];
+                for (let k = 0; k < thisTopicDocs.length; k++) {
+                    const { doc, score } = thisTopicDocs[k];
                     fileText += ` - [[${doc}]] [relevance: ${score.toPrecision(2)}]`;
                     // Add checks for source of text. Hard-coded to PDF for now
                     if (pdfNames.indexOf(doc) > -1)
@@ -235,7 +236,7 @@ export class TopicLinker {
             }
 
             try {
-                let file : any = vault.getAbstractFileByPath(fileName);
+                const file = <TFile> vault.getAbstractFileByPath(fileName);
                 if (file !== undefined && file !== null)
                     vault.modify(file, fileText);
                 else
@@ -247,28 +248,28 @@ export class TopicLinker {
         }
 
         // Create the index file
-        let topicFileName: string = normalizePath(`${topicDir}/Topic Index.md`);
-        let topicFileText: string = `# Topic Index\n\n`;
+        const topicFileName: string = normalizePath(`${topicDir}/Topic Index.md`);
+        let topicFileText = `# Topic Index\n\n`;
         topicFileText += `Results based on scanning files that match: *${topicPathPattern}*.\n\n`;
         topicFileText += `## Topics \n\n`;
-        for (var j = 0; j < numTopics; j++) {
+        for (let j = 0; j < numTopics; j++) {
             topicFileText += ` - [[${topicStrings[j]}]]\n`;
             // topicFileText += ` - [[${topicDir}/${topicStrings[j]}]]\n`;
         }
         topicFileText += `\n## Reading List\n\n`;
         topicFileText += `**Note:** to retain this list, copy to another location or check the 'Topic Folder Timestamp' option under 'Settings'.\n\n`;
 
-        let fileNames = files.map(file => file.basename).sort();
-        for (var j = 0; j < fileNames.length; j++) {
+        const fileNames = files.map(file => file.basename).sort();
+        for (let j = 0; j < fileNames.length; j++) {
             topicFileText += `- [ ] [[${fileNames[j]}]]\n`;
         }
 
-        let topicFile : any = vault.getAbstractFileByPath(topicFileName);
+        const topicFile = <TFile> vault.getAbstractFileByPath(topicFileName);
         if (topicFile !== undefined && topicFile !== null)
             vault.modify(topicFile, topicFileText);
         else
             vault.create(topicFileName, topicFileText);
 
-            statusBarItemEl.setText(`All done!`);
+        statusBarItemEl.setText(`All done!`);
     }
 }

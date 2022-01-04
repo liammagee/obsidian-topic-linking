@@ -30,7 +30,6 @@ export interface TopicLinkingSettings {
     ldaIterations: number;
     ldaBurnIn: number;
     ldaThin: number;
-    bookmarks: Object;
 }
 
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
@@ -56,8 +55,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     topicIncludeTimestamp: false,
     ldaIterations: 1000,
     ldaBurnIn: 100,
-    ldaThin: 10,
-    bookmarks: {}
+    ldaThin: 10
 }
 
 export class TopicLinkingSettingTab extends PluginSettingTab {

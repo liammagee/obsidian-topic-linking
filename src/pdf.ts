@@ -17,15 +17,15 @@ export class PDFContentExtractor {
      */
     getContent = async (vault: Vault, file : TFile, counter : number) => {
 
-        let pages = [];
+        const pages = [];
         try {
 
-            let buffer = await vault.readBinary(file);
+            const buffer = await vault.readBinary(file);
             const pdf = await this.pdfjs.getDocument(buffer).promise;
             console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
             for (let i = 0; i < pdf.numPages; i++) {
                 const page = await pdf.getPage(i + 1);
-                let text = await page.getTextContent();
+                const text = await page.getTextContent();
                 pages.push(text);
             }
         }
@@ -94,32 +94,32 @@ export class PDFContentExtractor {
 
         const pages: Array<any> = await this.getContent(vault, file, fileCounter);
 
-        let subPath = this.subPathFactory(file, this.pdfPath.length);
+        const subPath = this.subPathFactory(file, this.pdfPath.length);
         let minH = -1, maxH = -1, totalH = 0, counterH = 0, meanH = 0;
         pages.forEach((page) => {
             page.items.forEach((item:any) => {
-            const { str, dir, width, height, transform, fontName, hasEOL } = item;
-            if (str.trim().length > 0) {
-                if (height > maxH)
-                maxH = height;
-                if (height < minH || minH == -1)
-                minH = height;
-                totalH += height;
-                counterH++;
-            }
+                const { str, height } = item;
+                if (str.trim().length > 0) {
+                    if (height > maxH)
+                        maxH = height;
+                    if (height < minH || minH == -1)
+                        minH = height;
+                    totalH += height;
+                    counterH++;
+                }
             });
         });
 
         meanH = totalH / counterH;
-        let markdownStrings : string[] = [];
+        const markdownStrings : string[] = [];
         let counter = 0;
-        let strL = '', dirL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
-        let strLL = '', dirLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
+        let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
+        let transformLL : string[] = [], fontNameLL = '';
         let pageCounter = 0;
         pages.forEach((page) => {
-            let inCode: boolean = false;
-            let newLine: boolean = true;
-            let italicised: boolean = false;
+            let inCode = false;
+            let newLine = true;
+            let italicised = false;
             page.items.forEach((item:any) => {
                 let markdownText = '';
                 const { str, dir, width, height, transform, fontName, hasEOL } = item;
@@ -139,8 +139,7 @@ export class PDFContentExtractor {
                         newLine = false;
                     }
                     // In this case, assume a new line
-                    else if (Math.floor(widthL) != Math.floor(width) && strL.substring(strL.length - 1).match(/[\?\.:-]/) != null) {
-                        // markdownStrings[counter] = strL + (inCode ? "`" : "") + "\n\n";
+                    else if (Math.floor(widthL) != Math.floor(width) && strL.substring(strL.length - 1).match(/[?.:-]/) != null) {
                         markdownStrings[counter] = strL + '\n\n';
                         inCode = false;
                         newLine = true;
@@ -192,13 +191,8 @@ export class PDFContentExtractor {
                 markdownStrings.push(markdownText);
 
                 // Copy second last line
-                strLL = strL;
-                dirLL = dirL;
-                widthLL = widthL;
-                heightLL = heightL;
                 transformLL = transformL;
                 fontNameLL = fontNameL;
-                hasEOLLL = hasEOLL;
 
                 // Copy last line
                 strL = markdownText;
@@ -216,17 +210,17 @@ export class PDFContentExtractor {
         let markdownContents = markdownStrings.join('');
         markdownContents = `Source file: [[${file.path}]]\n\n${markdownContents}`;
 
-        let fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
+        const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
         const byteLength = Buffer.byteLength(markdownContents, 'utf-8');
         const kb = Math.ceil(byteLength / 1024);
         if (kb > settings.pdfExtractFileSizeLimit && settings.pdfExtractFileSizeLimit > 0 && settings.pdfExtractChunkIfFileExceedsLimit === true) {
             // Create a chunk size approximately half the maximum size
-            let chunkNum = Math.ceil(byteLength / (settings.pdfExtractFileSizeLimit * 1024 * 0.5));
+            const chunkNum = Math.ceil(byteLength / (settings.pdfExtractFileSizeLimit * 1024 * 0.5));
             // Split the contents into approximately equal segments
             const segments = this.chunkSubstring(markdownContents, chunkNum);
             for (let i = 0; i < segments.length; i++) {
                 const segmentPath = normalizePath(`${this.generatedPath}${subPath}${file.basename}_${i+1}.md`);
-                let newSegmentFile: any = vault.getAbstractFileByPath(segmentPath);
+                const newSegmentFile = <TFile> vault.getAbstractFileByPath(segmentPath);
                 if (newSegmentFile !== null)
                     await vault.modify(newSegmentFile, segments[i]);
                 else
@@ -234,7 +228,7 @@ export class PDFContentExtractor {
             }
         }
         else {
-            let newFile: any = vault.getAbstractFileByPath(fileName);
+            const newFile = <TFile> vault.getAbstractFileByPath(fileName);
             if (newFile !== null)
                 await vault.modify(newFile, markdownContents);
             else
@@ -267,7 +261,7 @@ export class PDFContentExtractor {
                 if (chunkIfFileExceedsLimit === false && fileSizeLimit > 0 && file.stat.size * 1024 > fileSizeLimit)
                     matches = false;
                 else if (!pdfOverwrite) {
-                    let subPath = this.subPathFactory(file, this.pdfPath.length);
+                    const subPath = this.subPathFactory(file, this.pdfPath.length);
                     let mdFile = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
                     let mdVersion = vault.getAbstractFileByPath(mdFile);
                     if (mdVersion === null) {
