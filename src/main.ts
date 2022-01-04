@@ -17,8 +17,8 @@ export default class TopicLinkingPlugin extends Plugin {
 
         // This command extracts PDFs to Markdown
         this.addCommand({
-            id: 'extract-pdf-command',
-            name: 'Extract PDF',
+            id: 'extract-md-from-pdfs-command',
+            name: 'Extract Markdown from PDFs',
             hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
             callback: async () => {
 
@@ -30,8 +30,8 @@ export default class TopicLinkingPlugin extends Plugin {
         });
 
         this.addCommand({
-            id: 'extract-from-bookmarks-command',
-            name: 'Extract from Bookmarks',
+            id: 'extract-md-from-bookmarks-command',
+            name: 'Extract Markdown from Bookmarks',
             hotkeys: [{ modifiers: ["Mod", "Shift"], key: "x" }],
             callback: async () => {
 
