@@ -6,5 +6,5 @@
 	"description": "Convert PDF files and web links to Markdown, and create topics from Markdown.",
 	"author": "Liam Magee",
 	"authorUrl": "https://github.com/liammagee/obsidian-topic-linking",
-	"isDesktopOnly": false
+	"isDesktopOnly": true
 }
