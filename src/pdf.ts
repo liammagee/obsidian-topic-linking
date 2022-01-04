@@ -196,7 +196,6 @@ export class PDFContentExtractor {
 
                 // Copy last line
                 strL = markdownText;
-                dirL = dir;
                 widthL = width;
                 heightL = height;
                 transformL = transform;
