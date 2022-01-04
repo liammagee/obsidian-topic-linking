@@ -3,6 +3,7 @@ import {
     TFile,
     prepareSimpleSearch,
     getAllTags, 
+    normalizePath,
 	moment } from 'obsidian';
 
 // For LDA
@@ -181,7 +182,7 @@ export class TopicLinker {
             topicDir += `-${moment().format('YYYYMMDDhhmmss')}`;
 
         try {
-            await vault.createFolder(topicDir);
+            await vault.createFolder(normalizePath(topicDir));
         }
         catch (err) {
             // Already exists? continue on
@@ -194,7 +195,7 @@ export class TopicLinker {
             // No associated terms - move on
             if (terms[0].word === undefined)
                 continue;
-            let fileName: string = `${topicDir}/${topicStrings[j]}.md`;
+            let fileName: string = normalizePath(`${topicDir}/${topicStrings[j]}.md`);
 
             let fileText: string = `# Topic ${j + 1}\n\n`;
             fileText += `Return to [[Topic Index]]\n\n`;
@@ -246,7 +247,7 @@ export class TopicLinker {
         }
 
         // Create the index file
-        let topicFileName: string = `${topicDir}/Topic Index.md`;
+        let topicFileName: string = normalizePath(`${topicDir}/Topic Index.md`);
         let topicFileText: string = `# Topic Index\n\n`;
         topicFileText += `Results based on scanning files that match: *${topicPathPattern}*.\n\n`;
         topicFileText += `## Topics \n\n`;
