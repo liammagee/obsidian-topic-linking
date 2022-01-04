@@ -71,7 +71,7 @@ export class BookmarkContentExtractor {
                     let fileName: string = `${this.generatedPath}${this.bookmarkPath}${title}.md`;
                     let file : any = vault.getAbstractFileByPath(fileName);
                     try {
-                            if (file !== null) {
+                        if (file !== null) {
                             if (settings.bookmarkOverwrite)
                                 vault.modify(file, md);
                         }
@@ -79,8 +79,6 @@ export class BookmarkContentExtractor {
                             vault.create(fileName, md);
                     }
                     catch (err) {
-                        console.log(link);
-                        console.log(err);
                     }
                 });
             }
