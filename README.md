@@ -33,11 +33,15 @@ The *Extract Web Link-Generated Content* command scans a folder (the default is 
 ### The *Link Topics* Command
 
 The command at the heart of the plugin is *Link Topics*. This takes a pattern setting, *Topic File Pattern*, to scan Markdown files for topics. A number of other settings condition how those files are scanned, how the LDA model is trained, and how the results of the model are then formatted. Here are the general  parameters for the command:
-- *Topic file pattern*: a *glob* style pattern for locating Markdown files for the model
 - *Number of topics*: how many topics to generate
 - *Number of words*: how many words to include for each topic
 - *Stemming*: whether scanned tokens should be stemmed (e.g. 'capital' becomes 'capit')
 - *Topic threshold*: what probability (between 0 and 1) a document must have to be relevant to a given topic
+
+Three parameters relate to which Markdown file contents are included in the topic model:
+- *Topic file pattern*: a *glob* style pattern for locating files
+- *Topic search pattern*: a non-empty string further filters files, depending on whether they contain the search term
+- *Topic tag pattern*: a non-empty tag further filters files, depending on whether they include one of the space-separated tags (e.g. '#fashion')
 
 Other parameters condition how the Markdown files are sampled:
 - *Fixed number of words*: select just a subset of each Markdown file, based on a fixed number of words

@@ -1,9 +1,7 @@
 import {
     App,
-    Modal,
     PluginSettingTab,
     Setting,
-    ToggleComponent,
   } from 'obsidian';
   
 import TopicLinkingPlugin from './main';
@@ -77,7 +75,31 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h2', { text: 'Topic Link Plugin' });
 
+        containerEl.createEl('h3', { text: 'General' });
+        new Setting(containerEl)
+            .setName('Generated files')
+            .setDesc('Where to output generated files')
+            .addText((text) => {
+                text.setPlaceholder('Generated/')
+                    .setValue(this.plugin.settings.generatedPath.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.generatedPath = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
         containerEl.createEl('h3', { text: 'PDF Extraction Settings' });
+        new Setting(containerEl)
+            .setName('PDF files')
+            .setDesc('Where to find PDF files')
+            .addText((text) => {
+                text.setPlaceholder('PDFs/')
+                    .setValue(this.plugin.settings.pdfPath.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.pdfPath = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
         new Setting(containerEl)
             .setName('Overwrite')
             .setDesc('Overwrite Markdown file if it already exists')
@@ -126,6 +148,17 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
             });
 
         containerEl.createEl('h3', { text: 'Bookmark Extraction Settings' });
+        new Setting(containerEl)
+            .setName('Bookmark files')
+            .setDesc('Where to find Bookmark files')
+            .addText((text) => {
+                text.setPlaceholder('Bookmarks/')
+                    .setValue(this.plugin.settings.bookmarkPath.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.bookmarkPath = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
         new Setting(containerEl)
             .setName('Overwrite')
             .setDesc('Overwrite Markdown file if it already exists')
