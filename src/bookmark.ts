@@ -28,16 +28,17 @@ export class BookmarkContentExtractor {
             this.deleteBookmarks(vault);
 
         // Get all files in the vault
-        const files : TFile[] = vault.getMarkdownFiles().filter((file : TFile) => file.path.indexOf(this.bookmarkPath) > -1);
+        const files : TFile[] = vault.getMarkdownFiles().filter((file : TFile) => file.path.indexOf(this.bookmarkPath) === 0);
         const fileContents: string[] = await Promise.all(files.map((file) => vault.cachedRead(file)));
 
-        fileContents.forEach((contents) => {
+        fileContents.forEach(async (contents) => {
             let links: string[] = contents.match(/https*\:\/\/[^ \)]*/g);
             if (links != null) {
 
                 // Extract only valid Markdown-able links
                 links = links.filter(link => !link.endsWith('.pdf') && !link.endsWith('.jpg'));
-                links.forEach(async (link) => {
+                for (let i = 0; i < links.length; i++) {
+                    const link = links[i];
 
                     // Retrieve the contents of the link
                     const htmlContents = await request({url: link});
@@ -80,7 +81,7 @@ export class BookmarkContentExtractor {
                     }
                     catch (err) {
                     }
-                });
+                }
             }
         })
 
