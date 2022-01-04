@@ -19,16 +19,18 @@ Some of these folders can be configured under *Settings*.
 
 ### Content Conversion Commands
 
-Two commands convert PDF and web links to Markdown files located in a folder called *Generated/*.
+Two commands convert PDF and web links to Markdown files located in a folder called by default *Generated/*.
 
-The *Extract PDF Content* command uses *Obsidian*'s built-in PDF parser to convert a vault's PDFs to Markdown. The conversion is highly simplified and approximate, to produce a stream of text for the topic linking command. However results should still be humanly legible. The command takes three options:
+The *Extract PDF Content* command uses *Obsidian*'s built-in PDF parser to convert a vault's PDFs to Markdown. The conversion is highly simplified and approximate, to produce a stream of text for the topic linking command. However results should still be humanly legible. The command takes four options:
+- *PDF files*: where to locate PDF files for processing
 - *Overwrite PDF-generated content*: whether to overwrite existing Markdown files with the same name
 - *Limit file number*: the maximum number of files to process (failing to set this can result in *Obsidian* running out of memory for large repositories)
 - *Limit file size*: the maximum size of files to process. The meaning of 'file' (either the PDF source or generated Markdown) depends upon whether *Chunk file if size exceeds limit* is set. 
 - *Chunk file if size exceeds limit*: if *Limit file size* is set, and Markdown files greater than this size are likely to be produced, the command will instead try to split the generated text across multiple smaller files. 
 
-The *Extract Web Link-Generated Content* command scans a folder (the default is named *Bookmarks*) for web links - anything beginning with *http(s)://*. It also takes an *Overwrite* parameter:
-- *Overwrite Web Links*: whether to overwrite existing Markdown files with the same name
+The *Extract Web Link-Generated Content* command scans a folder (the default is named *Bookmarks*) for web links in Markdown files - anything beginning with *http(s)://*. It takes two parameters:
+- *Bookmark files*: where to locate files containing links for processing
+- *Overwrite Web Links*: whether to overwrite existing generated Markdown files with the same name
 
 ### The *Link Topics* Command
 
