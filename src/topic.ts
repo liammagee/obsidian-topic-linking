@@ -1,6 +1,8 @@
 import { 
-    Vault, 
-    TFile, 
+    App, 
+    TFile,
+    prepareSimpleSearch,
+    getAllTags, 
 	moment } from 'obsidian';
 
 // For LDA
@@ -16,15 +18,21 @@ import { TopicLinkingSettings } from './settings';
 
 export class TopicLinker {
 
-    async link(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
+    async link(app: App, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
+
+        let { vault } = app;
 
         let topicPathPattern = settings.topicPathPattern;
+        let topicSearchPattern = settings.topicSearchPattern;
+        let topicTagPattern = settings.topicTagPattern;
 
         console.log(`Number of topics: ${settings.numTopics}`);
         console.log(`Number of words: ${settings.numWords}`);
         console.log(`Topic threshold: ${settings.topicThreshold}`);
         console.log(`Percentage of text: ${settings.percentageTextToScan}`);
         console.log(`Topic file pattern: ${topicPathPattern}`);
+        console.log(`Topic search pattern: ${topicSearchPattern}`);
+        console.log(`Topic tag pattern: ${topicTagPattern}`);
         console.log(`Fixed word length: ${settings.fixedWordLength}`);
         console.log(`Text percentage: ${settings.percentageTextToScan}`);
         console.log(`Word selection: ${settings.wordSelectionRandom}`);
@@ -32,6 +40,48 @@ export class TopicLinker {
         statusBarItemEl.setText(`Extracting Markdown file contents at ${settings.percentageTextToScan}%...`);
 
         let files: TFile[] = vault.getMarkdownFiles().filter((file) => micromatch([file.path], ['*' + topicPathPattern + '*']).length > 0);
+
+        // Add search condition here
+        if (topicSearchPattern && topicSearchPattern.length > 0) {
+            // Prepare query
+            const topicSearchFunc = prepareSimpleSearch(topicSearchPattern);
+
+            // Search through each matching file
+            let resultingFiles: TFile[] = [];
+            // let results: any[] = [];
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const fileContents = await vault.cachedRead(file);
+                const result = topicSearchFunc(fileContents);
+                if (result) {
+                    resultingFiles.push(file);
+                    // const { score, matches } = result;
+                    // results.push({file: file.basename, });
+                }
+            }
+            files = resultingFiles;
+        }
+
+        if (topicTagPattern && topicTagPattern.length > 0) {
+            // Assume tag pattern is formatted like: '#fashion #photography'
+            const topicTags : string[] = topicTagPattern.split(' ');
+
+            // Search through each matching file
+            let resultingFiles: TFile[] = [];
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const cm = app.metadataCache.getFileCache(file);
+                const tags : string[] = getAllTags(cm);
+                if (tags && tags.length > 0) {
+                    tags.forEach(tag => {
+                        if (topicTags.indexOf(tag) >= 0) 
+                            resultingFiles.push(file);
+                    });
+                }
+            }
+            files = resultingFiles;
+
+        }
 
         if (files.length === 0) {
             statusBarItemEl.setText('No Markdown files found!');

@@ -18,6 +18,8 @@ export interface TopicLinkingSettings {
     bookmarkPath: string;
     bookmarkOverwrite: boolean;
     topicPathPattern: string;
+    topicSearchPattern: string;
+    topicTagPattern: string;
     numTopics: number;
     numWords: number;
     stemming: boolean;
@@ -43,6 +45,8 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     bookmarkPath: 'Bookmarks/',
     bookmarkOverwrite: false,
     topicPathPattern: 'Generated/',
+    topicSearchPattern: '',
+    topicTagPattern: '',
     numTopics: 5,
     numWords: 5,
     stemming: false,
@@ -138,17 +142,6 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
         containerEl.createEl('h4', { text: 'General Parameters' });
 
         new Setting(containerEl)
-            .setName('Topc extraction file match')
-            .setDesc('Enter a pattern to match Markdown files for topic extraction.')
-            .addText((text) => {
-                text.setPlaceholder('Genenerated/')
-                    .setValue(this.plugin.settings.topicPathPattern.toString())
-                    .onChange(async (value) => {
-                        this.plugin.settings.topicPathPattern = value;
-                        await this.plugin.saveSettings();
-                    });
-            });
-        new Setting(containerEl)
             .setName('Number of topics')
             .setDesc('Enter the number of topics to generate.')
             .addText((text) => {
@@ -191,6 +184,41 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     .setValue(this.plugin.settings.topicThreshold.toString())
                     .onChange(async (value) => {
                         this.plugin.settings.topicThreshold = Math.min(Math.max(parseFloat(value), 0), 1);
+                        await this.plugin.saveSettings();
+                    });
+            });
+
+        containerEl.createEl('h4', { text: 'Conditions' });
+        new Setting(containerEl)
+            .setName('Topc extraction file match')
+            .setDesc('Enter a pattern to match Markdown files for topic extraction.')
+            .addText((text) => {
+                text.setPlaceholder('Generated/')
+                    .setValue(this.plugin.settings.topicPathPattern.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.topicPathPattern = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Topc extraction file match')
+            .setDesc('Enter a search expression that files must contain to be included in topic extraction.')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.topicSearchPattern.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.topicSearchPattern = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Topc extraction tag match')
+            .setDesc('Enter a series of tags (in the format "#fashion #photography") which must be included at least once in matching files.')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.topicTagPattern.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.topicTagPattern = value;
                         await this.plugin.saveSettings();
                     });
             });

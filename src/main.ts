@@ -49,9 +49,7 @@ export default class TopicLinkingPlugin extends Plugin {
             hotkeys: [{ modifiers: ["Mod", "Shift"], key: "z" }],
             callback: async () => {
 
-                const { vault } = this.app;
-
-                new TopicLinker().link(vault, this.settings, statusBarItemEl);
+                new TopicLinker().link(this.app, this.settings, statusBarItemEl);
             }
         });
 
