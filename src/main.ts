@@ -18,7 +18,7 @@ export default class TopicLinkingPlugin extends Plugin {
         // This command extracts PDFs to Markdown
         this.addCommand({
             id: 'extract-md-from-pdfs-command',
-            name: 'Extract Markdown from PDFs',
+            name: ' ',
             hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
             callback: async () => {
 
