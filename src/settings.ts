@@ -232,7 +232,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     });
             });
         new Setting(containerEl)
-            .setName('Topc extraction file match')
+            .setName('Topc extraction search match')
             .setDesc('Enter a search expression that files must contain to be included in topic extraction.')
             .addText((text) => {
                 text.setPlaceholder('')
