@@ -45,7 +45,7 @@ export class TopicLinker {
         // Add search condition here
         if (topicSearchPattern && topicSearchPattern.length > 0) {
             // Prepare query
-            const topicSearchFunc = prepareSimpleSearch(topicSearchPattern);
+           const topicSearchFunc = prepareSimpleSearch(topicSearchPattern);
 
             // Search through each matching file
             const resultingFiles: TFile[] = [];
@@ -98,7 +98,7 @@ export class TopicLinker {
         const wordRegexes : RegExp[] = words.map(word => { return new RegExp('\\b' + word + '\\b', 'gi'); });
 
         // Add other stop words
-        const extendedStops = ['©', 'null', 'obj', 'pg', 'de', 'et', 'la', 'le', 'el', 'que', 'dont', 'flotr2', 'mpg', 'ibid', 'pdses'];
+        const extendedStops = ['©', 'null', 'obj', 'pg', 'de', 'et', 'la', 'le', 'el', 'que', 'dont', 'flotr2', 'mpg', 'ibid', 'pdses', 'à', 'en', 'les', 'des', 'qui', 'du'];
         extendedStops.forEach(word => { wordRegexes.push(new RegExp('\\b' + word + '\\b', 'gi')) });
 
         // Retrieve all file contents
@@ -177,10 +177,10 @@ export class TopicLinker {
 
         let topicDir = `Topics`;
         if (settings.topicIncludePattern)
-            topicDir += `-${topicPathPattern.replace(/[*/. ]/g, '-').replace(/--/, '-')}`;
+            topicDir += `-${topicPathPattern.replace(/[*/. ]/g, '-')}-${topicSearchPattern.replace(/[*/. ]/g, '-')}`;
         if (settings.topicIncludeTimestamp)
             topicDir += `-${moment().format('YYYYMMDDhhmmss')}`;
-
+        topicDir = topicDir.replace(/--/, '-');
         try {
             await vault.createFolder(normalizePath(topicDir));
         }
@@ -216,7 +216,7 @@ export class TopicLinker {
             fileText += `| :${'-'.repeat(19)} | ${'-'.repeat(11)}: |\n`
             for (let k = 0; k < terms.length; k++) {
                 const { word, prob } = terms[k];
-                fileText += `| **${word.padEnd(20)}** | ${prob.toPrecision(2).padEnd(11)} |\n`;
+                fileText += `| ${('**'+word+'**').padEnd(20)} | ${prob.toPrecision(2).padEnd(11)} |\n`;
             }
 
             fileText += `\n\n`;
@@ -250,7 +250,7 @@ export class TopicLinker {
         // Create the index file
         const topicFileName: string = normalizePath(`${topicDir}/Topic Index.md`);
         let topicFileText = `# Topic Index\n\n`;
-        topicFileText += `Results based on scanning files that match: *${topicPathPattern}*.\n\n`;
+        topicFileText += `Results based on scanning files that match file path '*${topicPathPattern}*', search pattern '*${topicSearchPattern}* and tags '*${topicTagPattern}*'.\n\n`;
         topicFileText += `## Topics \n\n`;
         for (let j = 0; j < numTopics; j++) {
             topicFileText += ` - [[${topicStrings[j]}]]\n`;

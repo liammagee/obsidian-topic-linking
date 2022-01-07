@@ -19,6 +19,7 @@ export default class TopicLinkingPlugin extends Plugin {
         this.addCommand({
             id: 'extract-md-from-pdfs-command',
             name: ' ',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
             callback: async () => {
 
                 const { vault } = this.app;
@@ -31,6 +32,7 @@ export default class TopicLinkingPlugin extends Plugin {
         this.addCommand({
             id: 'extract-md-from-bookmarks-command',
             name: 'Extract Markdown from Bookmarks',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "x" }],
             callback: async () => {
 
                 const { vault } = this.app;
@@ -44,6 +46,7 @@ export default class TopicLinkingPlugin extends Plugin {
         this.addCommand({
             id: 'link-topics-command',
             name: 'Link Topics',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "z" }],
             callback: async () => {
 
                 new TopicLinker().link(this.app, this.settings, statusBarItemEl);

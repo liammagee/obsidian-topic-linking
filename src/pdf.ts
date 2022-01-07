@@ -17,7 +17,7 @@ export class PDFContentExtractor {
      */
     getContent = async (vault: Vault, file : TFile, counter : number) => {
 
-        const pages = [];
+        const pages : any[] = [];
         try {
 
             const buffer = await vault.readBinary(file);
@@ -25,8 +25,12 @@ export class PDFContentExtractor {
             console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
             for (let i = 0; i < pdf.numPages; i++) {
                 const page = await pdf.getPage(i + 1);
-                const text = await page.getTextContent();
-                pages.push(text);
+                // const text = await page.getTextContent();
+                const textContent = await page.getTextContent();
+                const operators = await page.getOperatorList();
+                const objs = page.commonObjs._objs;
+    
+                pages.push( { textContent: textContent, commonObjs: objs } );
             }
         }
         catch (err) {
@@ -91,13 +95,14 @@ export class PDFContentExtractor {
      * @param fileCounter 
      */
     processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
-
         const pages: Array<any> = await this.getContent(vault, file, fileCounter);
 
         const subPath = this.subPathFactory(file, this.pdfPath.length);
         let minH = -1, maxH = -1, totalH = 0, counterH = 0, meanH = 0;
-        pages.forEach((page) => {
-            page.items.forEach((item:any) => {
+        pages.forEach( (page) => {
+            const textContent = page.textContent;
+            const commonObja = page.commonObjs;
+            textContent.items.forEach((item:any) => {
                 const { str, height } = item;
                 if (str.trim().length > 0) {
                     if (height > maxH)
@@ -116,13 +121,51 @@ export class PDFContentExtractor {
         let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
         let transformLL : string[] = [], fontNameLL = '';
         let pageCounter = 0;
-        pages.forEach((page) => {
+        for (let j = 0; j < pages.length; j++) {
+            const page = pages[j];
+            const textContent = page.textContent;
+            const commonObjs = page.commonObjs;
+
             let inCode = false;
             let newLine = true;
-            let italicised = false;
-            page.items.forEach((item:any) => {
+            let blockquote = false
+            
+            for (let i = 0; i < textContent.items.length; i++) {
+                const item = textContent.items[i];
+            // textContent.items.forEach((item:any) => {
                 let markdownText = '';
-                const { str, dir, width, height, transform, fontName, hasEOL } = item;
+                let { str } = item;
+                const { dir, width, height, transform, fontName, hasEOL } = item;
+                let italicised = false, bolded = false;
+                const font = commonObjs[fontName];
+                if (font) {
+                    const fontDataName = font.data.name;
+                    italicised = fontDataName.indexOf('Italic') > -1;
+                    bolded = fontDataName.indexOf('Bold') > -1;
+                }
+                if (italicised && str.trim().length > 0)
+                    str = `*${str}*`;
+                else if (bolded && str.trim().length > 0)
+                    str = `**${str}**`;
+
+                // Make this a parameter perhaps
+                const treatEOLasNewLine = false;
+
+                let yDiff = 0;
+                if (transformL.length > 0) 
+                    yDiff = parseFloat(transformL[5]) - parseFloat(transform[5]);
+
+                if (height > 0 && height < meanH) {
+                    const diffH = height / meanH - 1;
+                    if (diffH < -0.2 && !blockquote) {
+                        blockquote = true;
+                        markdownText += `\n> `;
+                    }
+                }
+                else if (blockquote && str.trim().length > 0) {
+                    blockquote = false;
+                    markdownText += `\n\n`;
+                }
 
                 // Rules for handling 'code'-like strings. The main purpose here is to escape link-like syntax ('[[', ']]')
                 if ((str.indexOf('//=>') == 0 ||
@@ -132,47 +175,51 @@ export class PDFContentExtractor {
                     inCode = true;
                     newLine = false;
                 }
+                // Non-newline conditions
                 else if (strL != '' && hasEOLL && fontNameL == fontName && heightL == height) {
                     // If the last character was a hyphen, remove it
                     if (strL.endsWith('-')) {
-                        markdownStrings[counter] = strL.substring(0, strL.length - 1);
+                        // Removes hyphens - this is not usually the right behaviour though
+                        // markdownStrings[counter] = strL.substring(0, strL.length - 1);
                         newLine = false;
                     }
                     // In this case, assume a new line
-                    else if (Math.floor(widthL) != Math.floor(width) && strL.substring(strL.length - 1).match(/[?.:-]/) != null) {
-                        markdownStrings[counter] = strL + '\n\n';
+                    else if (Math.floor(widthL) != Math.floor(width) && ((treatEOLasNewLine && hasEOL) || strL.substring(strL.length - 1).match(/[?.:-]/) != null)) {
+                        // For the very last line, do not add new lines
+                        if (i < textContent.items.length - 1) {
+                            const lines = Math.floor(yDiff  / heightL);
+                            const linePadding = '\n' + '\n'.repeat(lines);
+                            markdownStrings[counter - 1] = markdownStrings[counter - 1] + linePadding;
+                            newLine = true;
+                        }
                         inCode = false;
-                        newLine = true;
                     }
-                    // Otherwise, do not create a new line. Just append the text
+                    // Otherwise, do not create a new line. Just append the text, with a trailing space
                     else {
-                        markdownStrings[counter] = strL + (strL.endsWith(" ") ? "" : " ");
-                        markdownText += ' ';
+                        markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
                         newLine = false;
                     }
                     markdownText += str;
                 }
                 // On the same line - assume the text might be italicised
-                else if (transform[5] == transformL[5]) {
-                    // Hack. A better way would be to look up the font properties formally
-                    if (!italicised && !inCode && fontNameL != fontName && fontNameLL != fontName) {
-                        markdownText += `*${str}*`;
-                        italicised = true;
-                    }
-                    else {
-                        markdownText += str;
-                        italicised = false;
-                    }
+                else if (transform[5] == transformL[5] || transform[5] == transformLL[5]) {
+                    markdownText += str;
                     newLine = false;
                 }
-                else if (transform[5] > transformL[5] && pageCounter > 0) {
-                    markdownText += "[" + str + "]";
-                    } 
-                else if (transform[5] == transformLL[5]) {
-                    markdownText += str;
-                } 
+                // else if (transform[5] > transformL[5] && pageCounter > 0) {
+                //     if (i == 0) {
+                //         markdownText += '\n\n';
+
+                //     }
+                //     markdownText += `[${str}]\n\n`;
+                // } 
+                // In this (default) case we assume a new line
                 else {
-                    markdownStrings[counter] = strL + (inCode ? "`" : "") + "\n\n";
+                    if (hasEOL && str === "") {
+                        const lines = Math.floor(yDiff  / heightL);
+                        const linePadding = '\n'.repeat(lines);
+                        markdownStrings[counter - 1] = markdownStrings[counter - 1] + (inCode ? "`" : "") + linePadding;
+                    }
                     inCode = false;
                     newLine = true;
                     if (height > meanH) {
@@ -180,7 +227,7 @@ export class PDFContentExtractor {
                         const headingSize = Math.ceil(0.5 / diffH);
                         if (headingSize <= 6) {
                             const heading = "#".repeat(headingSize);
-                            markdownText += heading + " ";
+                            markdownText += `\n\n${heading} `;
                         }
                     }
                     markdownText += str;
@@ -202,9 +249,9 @@ export class PDFContentExtractor {
                 fontNameL = fontName;
                 hasEOLL = hasEOL;
 
-                pageCounter++;
-            })
-        });
+            }
+            pageCounter++;
+        }
 
         let markdownContents = markdownStrings.join('');
         markdownContents = `Source file: [[${file.path}]]\n\n${markdownContents}`;
@@ -238,8 +285,12 @@ export class PDFContentExtractor {
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
         
         // Load PdfJs
-		this.pdfjs = await loadPdfJs();
-
+		// this.pdfjs = await loadPdfJs();
+        // Use this when there is a conflict between API and Worker versions. First install: `npm i pdfjs-dist`
+        this.pdfjs = require('pdfjs-dist/build/pdf');
+        const pdfjsWorker = require('pdfjs-dist/build/pdf.worker.entry');
+        this.pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+        
         statusBarItemEl.setText(`Extracting Markdown text from PDF files...`);
 
         this.generatedPath = settings.generatedPath;
