@@ -119,7 +119,7 @@ export class PDFContentExtractor {
         const markdownStrings : string[] = [];
         let counter = 0;
         let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
-        let transformLL : string[] = [], fontNameLL = '';
+        let strLL = '', transformLL : string[] = [], fontNameLL = '';
         let pageCounter = 0;
         for (let j = 0; j < pages.length; j++) {
             const page = pages[j];
@@ -128,7 +128,7 @@ export class PDFContentExtractor {
 
             let inCode = false;
             let newLine = true;
-            let blockquote = false
+            let blockquote = false;
             
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
@@ -143,10 +143,12 @@ export class PDFContentExtractor {
                     italicised = fontDataName.indexOf('Italic') > -1;
                     bolded = fontDataName.indexOf('Bold') > -1;
                 }
+                const leadingSpace = str.startsWith(' ') ? ' ' : '';
+                const trailingSpace = ' ';
                 if (italicised && str.trim().length > 0)
-                    str = `*${str}*`;
+                    str = `*${str.trim()}*${trailingSpace}`;
                 else if (bolded && str.trim().length > 0)
-                    str = `**${str}**`;
+                    str = `**${str.trim()}**${trailingSpace}`;
 
                 // Make this a parameter perhaps
                 const treatEOLasNewLine = false;
@@ -155,14 +157,21 @@ export class PDFContentExtractor {
                 if (transformL.length > 0) 
                     yDiff = parseFloat(transformL[5]) - parseFloat(transform[5]);
 
-                if (height > 0 && height < meanH) {
+                // If there's a change in height and a new line, treat as a blockquote
+                if (height > 0 && height < meanH && i > 0) {
                     const diffH = height / meanH - 1;
-                    if (diffH < -0.2 && !blockquote) {
-                        blockquote = true;
-                        markdownText += `\n> `;
+                    if (hasEOLL) {
+                        if (diffH < -0.2 && !blockquote) {
+                            blockquote = true;
+                            markdownText += `\n\n> `;
+                        }
+                    }
+                    // Treat as a footnote subscript, if this is not the first line (in which case it's likely a continuation)
+                    else if (!blockquote) {
+                        str = `${leadingSpace}[${str.trim()}]${trailingSpace}`;
                     }
                 }
-                else if (blockquote && str.trim().length > 0) {
+                else if (blockquote && str.trim().length > 0 && strL.trim().length === 0) {
                     blockquote = false;
                     markdownText += `\n\n`;
                 }
@@ -176,7 +185,7 @@ export class PDFContentExtractor {
                     newLine = false;
                 }
                 // Non-newline conditions
-                else if (strL != '' && hasEOLL && fontNameL == fontName && heightL == height) {
+                else if (strL != '' && hasEOLL && heightL == height) {
                     // If the last character was a hyphen, remove it
                     if (strL.endsWith('-')) {
                         // Removes hyphens - this is not usually the right behaviour though
@@ -184,9 +193,14 @@ export class PDFContentExtractor {
                         newLine = false;
                     }
                     // In this case, assume a new line
-                    else if (Math.floor(widthL) != Math.floor(width) && ((treatEOLasNewLine && hasEOL) || strL.substring(strL.length - 1).match(/[?.:-]/) != null)) {
-                        // For the very last line, do not add new lines
-                        if (i < textContent.items.length - 1) {
+                    else if (!blockquote && Math.floor(widthL) != Math.floor(width) && 
+                        ((treatEOLasNewLine && hasEOL) || 
+                        strL.substring(strL.length - 1).match(/[\u{2019}?.:-]/u) != null)) {
+                        // For the very last line (i.e. indicated by the current counter being the first line of a new page), do not add new lines
+                        if (blockquote) {
+                            markdownStrings[counter - 1] = markdownStrings[counter - 1] + '\n';
+                        }
+                        else if (i > 0) {
                             const lines = Math.floor(yDiff  / heightL);
                             const linePadding = '\n' + '\n'.repeat(lines);
                             markdownStrings[counter - 1] = markdownStrings[counter - 1] + linePadding;
@@ -202,10 +216,10 @@ export class PDFContentExtractor {
                     markdownText += str;
                 }
                 // On the same line - assume the text might be italicised
-                else if (transform[5] == transformL[5] || transform[5] == transformLL[5]) {
-                    markdownText += str;
-                    newLine = false;
-                }
+                // else if (transform[5] == transformL[5] || transform[5] == transformLL[5]) {
+                //     markdownText += str;
+                //     newLine = false;
+                // }
                 // else if (transform[5] > transformL[5] && pageCounter > 0) {
                 //     if (i == 0) {
                 //         markdownText += '\n\n';
@@ -215,10 +229,14 @@ export class PDFContentExtractor {
                 // } 
                 // In this (default) case we assume a new line
                 else {
-                    if (hasEOL && str === "") {
+                    if (hasEOL && str === "" && heightL > (meanH * 1.1)) {
                         const lines = Math.floor(yDiff  / heightL);
                         const linePadding = '\n'.repeat(lines);
                         markdownStrings[counter - 1] = markdownStrings[counter - 1] + (inCode ? "`" : "") + linePadding;
+                    }
+                    // New page - add a trailing space to the last line
+                    else if (i === 0) {
+                        markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
                     }
                     inCode = false;
                     newLine = true;
@@ -232,12 +250,17 @@ export class PDFContentExtractor {
                     }
                     markdownText += str;
                 }
+                if (pageCounter < 10) {
+                    // console.log(item)
+                }
+                
                 // Important! Escape all double brackets
-                markdownText = markdownText.replace('[[', `\\[\\[`);
+                markdownText = markdownText.replace('[[', `\\[\\[`).replace('  ', ' ');
                 counter++;
                 markdownStrings.push(markdownText);
 
                 // Copy second last line
+                strLL = strL;
                 transformLL = transformL;
                 fontNameLL = fontNameL;
 
