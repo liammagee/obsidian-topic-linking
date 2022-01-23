@@ -38,7 +38,6 @@
 		"@stdlib/types": "^0.0.13",
 		"micromatch": "^4.0.4",
 		"pdfjs": "^2.4.7",
-		"pdfjs-dist": "^2.12.313",
 		"stdlib": "^0.6.0"
 	}
 }

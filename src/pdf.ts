@@ -1,7 +1,6 @@
 import { 
     Vault, 
     TFile, 
-	debounce, 
     normalizePath,
     loadPdfJs } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
@@ -119,8 +118,8 @@ export class PDFContentExtractor {
         const markdownStrings : string[] = [];
         let counter = 0;
         let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
-        let strLL = '', transformLL : string[] = [], fontNameLL = '';
         let pageCounter = 0;
+
         for (let j = 0; j < pages.length; j++) {
             const page = pages[j];
             const textContent = page.textContent;
@@ -129,10 +128,12 @@ export class PDFContentExtractor {
             let inCode = false;
             let newLine = true;
             let blockquote = false;
+
+            // Make this a parameter perhaps
+            const treatEOLasNewLine = true;
             
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
-            // textContent.items.forEach((item:any) => {
                 let markdownText = '';
                 let { str } = item;
                 const { dir, width, height, transform, fontName, hasEOL } = item;
@@ -149,9 +150,6 @@ export class PDFContentExtractor {
                     str = `*${str.trim()}*${trailingSpace}`;
                 else if (bolded && str.trim().length > 0)
                     str = `**${str.trim()}**${trailingSpace}`;
-
-                // Make this a parameter perhaps
-                const treatEOLasNewLine = false;
 
                 let yDiff = 0;
                 if (transformL.length > 0) 
@@ -215,11 +213,6 @@ export class PDFContentExtractor {
                     }
                     markdownText += str;
                 }
-                // On the same line - assume the text might be italicised
-                // else if (transform[5] == transformL[5] || transform[5] == transformLL[5]) {
-                //     markdownText += str;
-                //     newLine = false;
-                // }
                 // else if (transform[5] > transformL[5] && pageCounter > 0) {
                 //     if (i == 0) {
                 //         markdownText += '\n\n';
@@ -251,18 +244,13 @@ export class PDFContentExtractor {
                     markdownText += str;
                 }
                 if (pageCounter < 10) {
-                    // console.log(item)
+                    console.log(item)
                 }
                 
                 // Important! Escape all double brackets
                 markdownText = markdownText.replace('[[', `\\[\\[`).replace('  ', ' ');
                 counter++;
                 markdownStrings.push(markdownText);
-
-                // Copy second last line
-                strLL = strL;
-                transformLL = transformL;
-                fontNameLL = fontNameL;
 
                 // Copy last line
                 strL = markdownText;
@@ -308,11 +296,7 @@ export class PDFContentExtractor {
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
         
         // Load PdfJs
-		// this.pdfjs = await loadPdfJs();
-        // Use this when there is a conflict between API and Worker versions. First install: `npm i pdfjs-dist`
-        this.pdfjs = require('pdfjs-dist/build/pdf');
-        const pdfjsWorker = require('pdfjs-dist/build/pdf.worker.entry');
-        this.pdfjs.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+		this.pdfjs = await loadPdfJs();
         
         statusBarItemEl.setText(`Extracting Markdown text from PDF files...`);
 
@@ -361,12 +345,10 @@ export class PDFContentExtractor {
 
         this.makeSubFolders(vault, files);
 
-        files.map(async (file : TFile, index : number) => {
-            const delayedProcessing = debounce((fileToProcess : TFile, i : number) => {
-                this.processPDF(vault, settings, fileToProcess, i);
-            }, 100, true);
-            await delayedProcessing(file, index + 1);
-        });
+        let index = 0;
+        for (let file of files) {
+            await this.processPDF(vault, settings, file, index++);
+        }
 
         statusBarItemEl.setText('All done!');
 

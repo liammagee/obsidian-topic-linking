@@ -19,3 +19,6 @@ dist/*
 
 # obsidian
 data.json
+
+# Alternative PdfJs loading, for testing
+alt-pdfjs-loading.ts

@@ -30,9 +30,12 @@ export class BookmarkContentExtractor {
 
         // Get all files in the vault
         const files : TFile[] = vault.getMarkdownFiles().filter((file : TFile) => file.path.indexOf(this.bookmarkPath) === 0);
-        const fileContents: string[] = await Promise.all(files.map((file) => vault.cachedRead(file)));
+        const fileContents: string[] = [];
+        for (let file of files) {
+            fileContents.push(await vault.cachedRead(file));
+        }
 
-        fileContents.forEach(async (contents) => {
+        for (let contents of fileContents) {
             let links: string[] = contents.match(/https*:\/\/[^ )]*/g);
             if (links != null) {
 
@@ -47,11 +50,13 @@ export class BookmarkContentExtractor {
                         const htmlContents = await request({url: link});
 
                         // Find the title, and override if not null
-                        const titleMatch = htmlContents.match(/<title>([^<]*)<\/title>/i);
                         let title : string = link;
-
-                        if (titleMatch !== null)
-                            title = titleMatch[1];
+                        if (htmlContents != null) {
+                            const titleMatch = htmlContents.match(/<title>([^<]*)<\/title>/i);
+                            if (titleMatch !== null && titleMatch.length > 1 && titleMatch[1] !== '') 
+                                title = titleMatch[1];
+                        }
+                            
 
                         // Ignore HTTP errors
                         if (title.indexOf('40') === 0 || title.indexOf('50') === 0)
@@ -78,7 +83,7 @@ export class BookmarkContentExtractor {
                             if (settings.bookmarkOverwrite)
                                 vault.modify(file, md);
                         }
-                        else
+                        else 
                             vault.create(fileName, md);
                     }
                     catch (err) {
@@ -86,7 +91,7 @@ export class BookmarkContentExtractor {
                     }
                 }
             }
-        })
+        }
 
         statusBarItemEl.setText('All done!');
     }
