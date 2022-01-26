@@ -118,6 +118,9 @@ export class PDFContentExtractor {
         const markdownStrings : string[] = [];
         let counter = 0;
         let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
+        let leftMarginL = 0;
+        let yCoordL = 0, yCoordLL = 0;
+        let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
         let pageCounter = 0;
 
         for (let j = 0; j < pages.length; j++) {
@@ -130,13 +133,16 @@ export class PDFContentExtractor {
             let blockquote = false;
 
             // Make this a parameter perhaps
-            const treatEOLasNewLine = true;
+            const treatEOLasNewLine = false;
             
+
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
                 let markdownText = '';
                 let { str } = item;
                 const { dir, width, height, transform, fontName, hasEOL } = item;
+                let leftMargin = parseFloat(transform[4]);
+                let yCoord = parseFloat(transform[5]);
                 let italicised = false, bolded = false;
                 const font = commonObjs[fontName];
                 if (font) {
@@ -145,18 +151,21 @@ export class PDFContentExtractor {
                     bolded = fontDataName.indexOf('Bold') > -1;
                 }
                 const leadingSpace = str.startsWith(' ') ? ' ' : '';
-                const trailingSpace = ' ';
+                const trailingSpace = str.endsWith(' ') ? ' ' : '';
                 if (italicised && str.trim().length > 0)
                     str = `*${str.trim()}*${trailingSpace}`;
                 else if (bolded && str.trim().length > 0)
                     str = `**${str.trim()}**${trailingSpace}`;
 
                 let yDiff = 0;
+                let yDiff2 = 0;
                 if (transformL.length > 0) 
-                    yDiff = parseFloat(transformL[5]) - parseFloat(transform[5]);
+                    yDiff = yCoordL - yCoord;
+                if (transformLL.length > 0) 
+                    yDiff2 = yCoordLL - yCoord;
 
-                // If there's a change in height and a new line, treat as a blockquote
-                if (height > 0 && height < meanH && i > 0) {
+                // If there's a change in height, a new line and an indentation, treat as a blockquote
+                if (height > 0 && height < meanH && i > 0 && leftMargin > leftMarginL) {
                     const diffH = height / meanH - 1;
                     if (hasEOLL) {
                         if (diffH < -0.2 && !blockquote) {
@@ -183,7 +192,7 @@ export class PDFContentExtractor {
                     newLine = false;
                 }
                 // Non-newline conditions
-                else if (strL != '' && hasEOLL && heightL == height) {
+                else if (strL.trim() != '' && hasEOLL && heightL == height) {
                     // If the last character was a hyphen, remove it
                     if (strL.endsWith('-')) {
                         // Removes hyphens - this is not usually the right behaviour though
@@ -199,8 +208,11 @@ export class PDFContentExtractor {
                             markdownStrings[counter - 1] = markdownStrings[counter - 1] + '\n';
                         }
                         else if (i > 0) {
-                            const lines = Math.floor(yDiff  / heightL);
-                            const linePadding = '\n' + '\n'.repeat(lines);
+                            const lines = Math.floor(yDiff  / height);
+                            let linePadding = '\n'.repeat(lines);
+                            // If the line is indented, add another line
+                            if (lines > 0 && leftMargin > leftMarginL) 
+                                linePadding += '\n';
                             markdownStrings[counter - 1] = markdownStrings[counter - 1] + linePadding;
                             newLine = true;
                         }
@@ -213,44 +225,74 @@ export class PDFContentExtractor {
                     }
                     markdownText += str;
                 }
-                // else if (transform[5] > transformL[5] && pageCounter > 0) {
-                //     if (i == 0) {
-                //         markdownText += '\n\n';
-
-                //     }
-                //     markdownText += `[${str}]\n\n`;
-                // } 
                 // In this (default) case we assume a new line
                 else {
-                    if (hasEOL && str === "" && heightL > (meanH * 1.1)) {
-                        const lines = Math.floor(yDiff  / heightL);
+                    /*
+                    In Case 1: 
+                     - two items back has text at a certain y coordinate
+                     - one line back has a zero-length string, and is an EOL marker
+                     - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
+                     */
+                    if (hasEOLL && strL.trim() === "" && yDiff2 > height * 2) {   
+                        const lines = Math.floor(yDiff2  / height);
                         const linePadding = '\n'.repeat(lines);
+                        markdownStrings[counter - 2] = markdownStrings[counter - 2] + (inCode ? "`" : "") + linePadding;
+                    }
+                    /*
+                    In Case 2: 
+                     - two items back has text at a certain y coordinate
+                     - one line back has a zero-length string, and is an EOL marker
+                     - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
+                     */
+                    else if (hasEOLL && strL.trim() === "" && yDiff > height) {   
+                        const lines = Math.floor(yDiff  / height);
+                        const linePadding = '\n' + '\n'.repeat(lines);
                         markdownStrings[counter - 1] = markdownStrings[counter - 1] + (inCode ? "`" : "") + linePadding;
                     }
-                    // New page - add a trailing space to the last line
+                    /*
+                    Case 3: New page - add a trailing space to the last line
+                    */
                     else if (i === 0) {
                         markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
                     }
+
                     inCode = false;
                     newLine = true;
+
+                    // Treat as a heading, and calculate the heading size by the height of the line
+                    let heading = '';
+                    let headingPadding = '';
                     if (height > meanH) {
                         const diffH = height / meanH - 1;
                         const headingSize = Math.ceil(0.5 / diffH);
                         if (headingSize <= 6) {
-                            const heading = "#".repeat(headingSize);
-                            markdownText += `\n\n${heading} `;
+                            heading = "#".repeat(headingSize) + ' ';
+                            headingPadding = "\n".repeat(7 - headingSize);
                         }
                     }
+                    
+                    markdownText += headingPadding;
+                    markdownText += heading;
                     markdownText += str;
                 }
-                if (pageCounter < 10) {
-                    console.log(item)
-                }
-                
-                // Important! Escape all double brackets
-                markdownText = markdownText.replace('[[', `\\[\\[`).replace('  ', ' ');
+
+                // Important! Escape all double brackets, and double spaces with single spaces
+                markdownText = markdownText.replaceAll('[[', `\\[\\[`).replaceAll('  ', ' ');
                 counter++;
                 markdownStrings.push(markdownText);
+
+                // Copy second last line
+                strLL = strL;
+                widthLL = widthL;
+                heightLL = heightL;
+                transformLL = transformL;
+                fontNameLL = fontNameL;
+                hasEOLLL = hasEOLL;
+                yCoordLL = yCoordL;
+
+                // If the current item is on the same line, don't update the left margin value
+                if (transform[5] !== transformL[5] && str !== '')
+                    leftMarginL = leftMargin;
 
                 // Copy last line
                 strL = markdownText;
@@ -259,6 +301,7 @@ export class PDFContentExtractor {
                 transformL = transform;
                 fontNameL = fontName;
                 hasEOLL = hasEOL;
+                yCoordL = yCoord;
 
             }
             pageCounter++;
