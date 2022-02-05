@@ -102,13 +102,8 @@ export class TopicLinker {
         extendedStops.forEach(word => { wordRegexes.push(new RegExp('\\b' + word + '\\b', 'gi')) });
 
         // Retrieve all file contents
-        const fileContents: string[] = [];
         for (let file of files) {
-            fileContents.push(await vault.cachedRead(file));
-        }
-
-        // Produce word sequences for set text amounts, without stopwords or punctuation.
-        const documents: string[] = fileContents.map((document) => {
+            let document = await vault.cachedRead(file);
 
             // Handle fixed number of words
             if (settings.fixedWordLength > 0) {

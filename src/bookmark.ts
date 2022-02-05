@@ -30,12 +30,8 @@ export class BookmarkContentExtractor {
 
         // Get all files in the vault
         const files : TFile[] = vault.getMarkdownFiles().filter((file : TFile) => file.path.indexOf(this.bookmarkPath) === 0);
-        const fileContents: string[] = [];
         for (let file of files) {
-            fileContents.push(await vault.cachedRead(file));
-        }
-
-        for (let contents of fileContents) {
+            let contents = await vault.cachedRead(file)
             let links: string[] = contents.match(/https*:\/\/[^ )]*/g);
             if (links != null) {
 
