@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-topic-linking",
-	"version": "0.0.1",
+	"version": "0.1.2",
 	"type": "module",
 	"description": "This is a topic linking plugin for Obsidian (https://obsidian.md)",
 	"main": "main.js",
