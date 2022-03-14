@@ -6,10 +6,13 @@ import {
     normalizePath} from 'obsidian';
 import { TopicLinkingSettings } from './settings';
 
+
+
 export class BookmarkContentExtractor {
     generatedPath: string;
     bookmarkPath: string;
 
+    
     async deleteBookmarks(vault: Vault) {
         const filesToDelete: TFile[] = vault.getFiles().
             filter((file : TFile) => file.path.indexOf(normalizePath(`${this.generatedPath}${this.bookmarkPath}`)) > -1 && file.extension === 'md');

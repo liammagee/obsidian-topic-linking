@@ -102,6 +102,7 @@ export class TopicLinker {
         extendedStops.forEach(word => { wordRegexes.push(new RegExp('\\b' + word + '\\b', 'gi')) });
 
         // Retrieve all file contents
+        let documents : string[] = [];
         for (let file of files) {
             let document = await vault.cachedRead(file);
 
@@ -133,8 +134,8 @@ export class TopicLinker {
             if (settings.stemming)
                 document = document.split(' ').map(word => porterStemmer(word)).join(' ');
 
-            return document.trim();
-        });
+            documents.push(document.trim());
+        }
 
         // Do the LDA model fitting
         const numTopics = settings.numTopics;

@@ -203,12 +203,15 @@ export class PDFContentExtractor {
                     else if (!blockquote && Math.floor(widthL) != Math.floor(width) && 
                         ((treatEOLasNewLine && hasEOL) || 
                         strL.substring(strL.length - 1).match(/[\u{2019}?.:-]/u) != null)) {
+
                         // For the very last line (i.e. indicated by the current counter being the first line of a new page), do not add new lines
                         if (blockquote) {
                             markdownStrings[counter - 1] = markdownStrings[counter - 1] + '\n';
                         }
                         else if (i > 0) {
-                            const lines = Math.floor(yDiff  / height);
+
+                            let lines = Math.floor(yDiff  / height);
+                            lines = lines < 1 ? 1 : lines;
                             let linePadding = '\n'.repeat(lines);
                             // If the line is indented, add another line
                             if (lines > 0 && leftMargin > leftMarginL) 
@@ -234,7 +237,8 @@ export class PDFContentExtractor {
                      - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
                      */
                     if (hasEOLL && strL.trim() === "" && yDiff2 > height * 2) {   
-                        const lines = Math.floor(yDiff2  / height);
+                        let lines = Math.floor(yDiff2  / height);
+                        lines = lines < 1 ? 1 : lines;
                         const linePadding = '\n'.repeat(lines);
                         markdownStrings[counter - 2] = markdownStrings[counter - 2] + (inCode ? "`" : "") + linePadding;
                     }
@@ -245,7 +249,8 @@ export class PDFContentExtractor {
                      - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
                      */
                     else if (hasEOLL && strL.trim() === "" && yDiff > height) {   
-                        const lines = Math.floor(yDiff  / height);
+                        let lines = Math.floor(yDiff  / height);
+                        lines = lines < 1 ? 1 : lines;
                         const linePadding = '\n' + '\n'.repeat(lines);
                         markdownStrings[counter - 1] = markdownStrings[counter - 1] + (inCode ? "`" : "") + linePadding;
                     }
@@ -262,18 +267,21 @@ export class PDFContentExtractor {
                     // Treat as a heading, and calculate the heading size by the height of the line
                     let heading = '';
                     let headingPadding = '';
+                    let headingTrail = '';
                     if (height > meanH) {
                         const diffH = height / meanH - 1;
                         const headingSize = Math.ceil(0.5 / diffH);
                         if (headingSize <= 6) {
                             heading = "#".repeat(headingSize) + ' ';
                             headingPadding = "\n".repeat(7 - headingSize);
+                            headingTrail = "\n".repeat(2);
                         }
                     }
-                    
+                
                     markdownText += headingPadding;
                     markdownText += heading;
                     markdownText += str;
+                    markdownText += headingTrail;
                 }
 
                 // Important! Escape all double brackets, and double spaces with single spaces
