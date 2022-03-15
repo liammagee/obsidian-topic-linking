@@ -25,11 +25,13 @@ export interface TopicLinkingSettings {
     fixedWordLength: number;
     percentageTextToScan: number;
     wordSelectionRandom: boolean;
+    topicFolderName: string;
     topicIncludePattern: boolean;
     topicIncludeTimestamp: boolean;
     ldaIterations: number;
     ldaBurnIn: number;
     ldaThin: number;
+    includeTags: boolean;
 }
 
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
@@ -51,11 +53,13 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     fixedWordLength: 1000,
     percentageTextToScan: 5,
     wordSelectionRandom: true,
+    topicFolderName: 'Topics',
     topicIncludePattern: false,
     topicIncludeTimestamp: false,
     ldaIterations: 1000,
     ldaBurnIn: 100,
-    ldaThin: 10
+    ldaThin: 10,
+    includeTags: false
 }
 
 export class TopicLinkingSettingTab extends PluginSettingTab {
@@ -293,6 +297,17 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h4', { text: 'Topic Folder Naming' });
         new Setting(containerEl)
+            .setName('Topic files')
+            .setDesc('Where to output topic files')
+            .addText((text) => {
+                text.setPlaceholder('Topics')
+                    .setValue(this.plugin.settings.topicFolderName.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.topicFolderName = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
             .setName('Topic folder pattern')
             .setDesc('Select whether the topic folder should include the Markdown search pattern.')
             .addToggle((toggle) => {
@@ -351,5 +366,15 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     });
             });
-    }
+        new Setting(containerEl)
+            .setName('Include tags in output')
+            .setDesc('Select whether tags should be included in the topic output files.')
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.includeTags)
+                    .onChange(async (value) => {
+                        this.plugin.settings.includeTags = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+   }
 }
