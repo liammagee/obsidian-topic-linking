@@ -126,7 +126,10 @@ export class PDFContentExtractor {
         let footnoteCounter = 1;
         let footnotes : Record<number, string> = {};
 
+        // Make a parameter
+        let includePageNumbersInFootnotes = true;
         let annotationQuads = [];
+
         for (let j = 0; j < pages.length; j++) {
             const page = pages[j];
             const textContent = page.textContent;
@@ -193,6 +196,11 @@ export class PDFContentExtractor {
                                     highlightEnd = true;
                                     if (annotation.contents.trim().length > 0) {
                                         comment = true;
+
+                                        if (includePageNumbersInFootnotes && commentText === '') {
+                                            commentText = `[from page ${pageCounter + 1}] - `;
+                                        }
+
                                         commentText += annotation.contents;
                                     }
                                 }
@@ -200,7 +208,6 @@ export class PDFContentExtractor {
                         }
                     }
                     else if (parentID !== undefined) {
-                        console.log(annotation);
                         if (annotation.parentID == parentID) {
                             if (annotation.type == 'Highlight') {
                                 // highlightStart = true;
@@ -216,8 +223,6 @@ export class PDFContentExtractor {
                         }
                     }
                 }
-
-
 
                 let leftMargin = parseFloat(transform[4]);
                 let yCoord = parseFloat(transform[5]);
@@ -237,38 +242,7 @@ export class PDFContentExtractor {
 
 
                 // Handle any highlighting
-                if (highlightStart) {
-                    let sl = str.length;
-                    if (sl > 0) {
-                        let hl = Math.floor(sl * highlightL);
-                        if (hl > 0 && str.charAt(hl) === ' ')
-                            hl += 1;
-                        let highlightText1 = str.substr(0, hl);
-                        let highlightText2 = str.substr(hl);
-
-                        str = highlightText1 + `==${highlightText2}`;
-                    }
-                }
-                if (highlightEnd) {
-                    let sl = str.length;
-                    if (sl > 0) {
-                        let hr = Math.ceil(sl * highlightR);
-                        // Add the two highlight characters if part of the same block
-                        if (highlightStart)
-                            hr += 2;
-                        let highlightText1 = str.substr(0, hr);
-                        let highlightText2 = str.substr(hr);
-
-                        // Add the footnote marker here
-                        if (comment) {
-                            highlightText1 += `[^${footnoteCounter}]`;
-                            footnotes[footnoteCounter] = commentText;
-                            footnoteCounter++;
-                        }
-
-                        str = highlightText1 + `==${highlightText2}`;
-                    }
-                }
+                ({ str, footnoteCounter } = this.processHighlights(highlightStart, str, highlightL, highlightEnd, highlightR, comment, footnoteCounter, footnotes, commentText));
 
                     
                 let yDiff = 0;
@@ -465,6 +439,42 @@ export class PDFContentExtractor {
         }
     };
     
+    private processHighlights(highlightStart: boolean, str: any, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnoteCounter: number, footnotes: Record<number, string>, commentText: string) {
+        if (highlightStart) {
+            let sl = str.length;
+            if (sl > 0) {
+                let hl = Math.floor(sl * highlightL);
+                if (hl > 0 && str.charAt(hl) === ' ')
+                    hl += 1;
+                let highlightText1 = str.substr(0, hl);
+                let highlightText2 = str.substr(hl);
+
+                str = highlightText1 + `==${highlightText2}`;
+            }
+        }
+        if (highlightEnd) {
+            let sl = str.length;
+            if (sl > 0) {
+                let hr = Math.ceil(sl * highlightR);
+                // Add the two highlight characters if part of the same block
+                if (highlightStart)
+                    hr += 2;
+                let highlightText1 = str.substr(0, hr);
+                let highlightText2 = str.substr(hr);
+
+                // Add the footnote marker here
+                if (comment) {
+                    highlightText1 += `[^${footnoteCounter}]`;
+                    footnotes[footnoteCounter] = commentText;
+                    footnoteCounter++;
+                }
+
+                str = highlightText1 + `==${highlightText2}`;
+            }
+        }
+        return { str, footnoteCounter };
+    }
+
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
         
         // Load PdfJs
