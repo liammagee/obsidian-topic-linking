@@ -11,32 +11,6 @@ export class PDFContentExtractor {
     generatedPath: string;
     pdfPath: string;
 
-    /**
-     * Extracts text from a PDF file.
-     */
-    getContent = async (vault: Vault, file : TFile, counter : number) => {
-
-        const pages : any[] = [];
-        try {
-
-            const buffer = await vault.readBinary(file);
-            const pdf = await this.pdfjs.getDocument(buffer).promise;
-            console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
-            for (let i = 0; i < pdf.numPages; i++) {
-                const page = await pdf.getPage(i + 1);
-                // const text = await page.getTextContent();
-                const textContent = await page.getTextContent();
-                const operators = await page.getOperatorList();
-                const objs = page.commonObjs._objs;
-    
-                pages.push( { textContent: textContent, commonObjs: objs } );
-            }
-        }
-        catch (err) {
-            console.log(`Error ${err} loading ${file.path}.`)
-        }
-        return pages;
-    }
 
     /**
      * Returns parts of the path between an offset and the file name.
@@ -89,6 +63,33 @@ export class PDFContentExtractor {
     }
 
     /**
+     * Extracts text from a PDF file.
+     */
+     getContent = async (vault: Vault, file : TFile, counter : number) => {
+
+        const pages : any[] = [];
+        try {
+
+            const buffer = await vault.readBinary(file);
+            const pdf = await this.pdfjs.getDocument(buffer).promise;
+            console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
+            for (let i = 0; i < pdf.numPages; i++) {
+                const page = await pdf.getPage(i + 1);
+                const textContent = await page.getTextContent();
+                const operators = await page.getOperatorList();
+                const annotations = await page.getAnnotations();
+                const objs = page.commonObjs._objs;
+    
+                pages.push( { textContent: textContent, commonObjs: objs, annotations: annotations } );
+            }
+        }
+        catch (err) {
+            console.log(`Error ${err} loading ${file.path}.`)
+        }
+        return pages;
+    }
+
+    /**
      * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
      * @param file 
      * @param fileCounter 
@@ -100,7 +101,6 @@ export class PDFContentExtractor {
         let minH = -1, maxH = -1, totalH = 0, counterH = 0, meanH = 0;
         pages.forEach( (page) => {
             const textContent = page.textContent;
-            const commonObja = page.commonObjs;
             textContent.items.forEach((item:any) => {
                 const { str, height } = item;
                 if (str.trim().length > 0) {
@@ -122,11 +122,16 @@ export class PDFContentExtractor {
         let yCoordL = 0, yCoordLL = 0;
         let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
         let pageCounter = 0;
+        
+        let footnoteCounter = 1;
+        let footnotes : Record<number, string> = {};
 
+        let annotationQuads = [];
         for (let j = 0; j < pages.length; j++) {
             const page = pages[j];
             const textContent = page.textContent;
             const commonObjs = page.commonObjs;
+            const annotations = page.annotations;
 
             let inCode = false;
             let newLine = true;
@@ -134,13 +139,86 @@ export class PDFContentExtractor {
 
             // Make this a parameter perhaps
             const treatEOLasNewLine = false;
-            
 
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
                 let markdownText = '';
                 let { str } = item;
                 const { dir, width, height, transform, fontName, hasEOL } = item;
+
+                // Do check for whether any annotation bounding boxes overlap with this item
+                // TODO: Refactor to a function
+
+                // Handle annotations - highlight and comments as footnotes
+                let highlightStart = false, highlightEnd = false;
+                let highlightL = 0.0, highlightR = 1.0;
+                let comment = false;
+                let commentText = '';
+                let parentID = undefined;
+
+                let tp0 = { x: transform[4], y: transform[5] + height };
+                let tp1 = { x: transform[4] + width, y: transform[5] + height };
+                let tp2 = { x: transform[4], y: transform[5] };
+                let tp3 = { x: transform[4] + width, y: transform[5] };
+
+                // Allows for a gap between annotation and text boxes
+                const Y_FUDGE = 2.0;
+                for (let annotation of annotations) {
+                    if (annotation.quadPoints !== undefined) {
+                        for (let qi = 0; qi < annotation.quadPoints.length; qi++) {
+                            const quad = annotation.quadPoints[qi];
+                            // Do bounding box test
+                            const p0 = quad[0];
+                            const p1 = quad[1];
+                            const p2 = quad[2];
+                            const p3 = quad[3];
+
+                            // if (p0.x < tp0.x && p0.y > tp0.y - Y_FUDGE && p3.x > tp3.x && p3.y < tp3.y) {
+                            if (p0.y > tp0.y - Y_FUDGE && p3.y < tp3.y) {
+                                if (qi == 0) {
+                                    highlightStart = true;
+                                    if (p0.x > tp0.x) {
+                                        highlightL = ((p0.x - tp0.x) / (tp3.x - tp0.x));
+                                    }
+                                }
+                                // Only set the parent ID if this is the last quad
+                                // Because it is only then that we want to 
+                                // [1] flag any comments
+                                // [2] insert a footnote or attach comments to the text
+                                if (qi == annotation.quadPoints.length - 1) {
+                                    if (p3.x < tp3.x) {
+                                        highlightR = ((p3.x - tp0.x) / (tp3.x - tp0.x));
+                                    }
+                                    parentID = annotation.id;
+                                    highlightEnd = true;
+                                    if (annotation.contents.trim().length > 0) {
+                                        comment = true;
+                                        commentText += annotation.contents;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if (parentID !== undefined) {
+                        console.log(annotation);
+                        if (annotation.parentID == parentID) {
+                            if (annotation.type == 'Highlight') {
+                                // highlightStart = true;
+                            }
+                            else if (annotation.type == 'Comment') {
+                                comment = true;
+                                commentText += annotation.contents;
+                            }
+                        }
+                        else if (annotation.inReplyTo == parentID) {
+                            comment = true;
+                            commentText += annotation.contents;
+                        }
+                    }
+                }
+
+
+
                 let leftMargin = parseFloat(transform[4]);
                 let yCoord = parseFloat(transform[5]);
                 let italicised = false, bolded = false;
@@ -157,6 +235,42 @@ export class PDFContentExtractor {
                 else if (bolded && str.trim().length > 0)
                     str = `**${str.trim()}**${trailingSpace}`;
 
+
+                // Handle any highlighting
+                if (highlightStart) {
+                    let sl = str.length;
+                    if (sl > 0) {
+                        let hl = Math.floor(sl * highlightL);
+                        if (hl > 0 && str.charAt(hl) === ' ')
+                            hl += 1;
+                        let highlightText1 = str.substr(0, hl);
+                        let highlightText2 = str.substr(hl);
+
+                        str = highlightText1 + `==${highlightText2}`;
+                    }
+                }
+                if (highlightEnd) {
+                    let sl = str.length;
+                    if (sl > 0) {
+                        let hr = Math.ceil(sl * highlightR);
+                        // Add the two highlight characters if part of the same block
+                        if (highlightStart)
+                            hr += 2;
+                        let highlightText1 = str.substr(0, hr);
+                        let highlightText2 = str.substr(hr);
+
+                        // Add the footnote marker here
+                        if (comment) {
+                            highlightText1 += `[^${footnoteCounter}]`;
+                            footnotes[footnoteCounter] = commentText;
+                            footnoteCounter++;
+                        }
+
+                        str = highlightText1 + `==${highlightText2}`;
+                    }
+                }
+
+                    
                 let yDiff = 0;
                 let yDiff2 = 0;
                 if (transformL.length > 0) 
@@ -286,6 +400,7 @@ export class PDFContentExtractor {
 
                 // Important! Escape all double brackets, and double spaces with single spaces
                 markdownText = markdownText.replaceAll('[[', `\\[\\[`).replaceAll('  ', ' ');
+
                 counter++;
                 markdownStrings.push(markdownText);
 
@@ -317,6 +432,12 @@ export class PDFContentExtractor {
 
         let markdownContents = markdownStrings.join('');
         markdownContents = `Source file: [[${file.path}]]\n\n${markdownContents}`;
+
+        // Add any footnotes 
+        for (let footnoteID in footnotes) {
+            let footnoteText = footnotes[footnoteID];
+            markdownContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
+        }
 
         const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
         const byteLength = Buffer.byteLength(markdownContents, 'utf-8');
