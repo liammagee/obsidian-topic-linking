@@ -13,6 +13,11 @@ export interface TopicLinkingSettings {
     pdfExtractFileNumberLimit: number;
     pdfExtractFileSizeLimit: number;
     pdfExtractChunkIfFileExceedsLimit: boolean;
+    
+    pdfExtractAnnotations: boolean;
+    pdfExtractAnnotationsIncludeComments: boolean;
+    pdfExtractAnnotationsIncludeCommentsAsCallouts: boolean;
+
     bookmarkPath: string;
     bookmarkOverwrite: boolean;
     topicPathPattern: string;
@@ -41,6 +46,11 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfExtractFileNumberLimit: 0,
     pdfExtractFileSizeLimit: 5000,
     pdfExtractChunkIfFileExceedsLimit: true,
+
+    pdfExtractAnnotations: true,
+    pdfExtractAnnotationsIncludeComments: true,
+    pdfExtractAnnotationsIncludeCommentsAsCallouts: true,
+
     bookmarkPath: 'Bookmarks/',
     bookmarkOverwrite: false,
     topicPathPattern: 'Generated/',

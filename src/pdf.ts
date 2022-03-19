@@ -90,15 +90,13 @@ export class PDFContentExtractor {
     }
 
     /**
-     * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
-     * @param file 
-     * @param fileCounter 
+     * Calculate mean text height across all pages. Used to determine if a given text block is a heading (if its text height is 
+     * well above the mean).
+     * @param pages of the PDF file
      */
-    processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
-        const pages: Array<any> = await this.getContent(vault, file, fileCounter);
-
-        const subPath = this.subPathFactory(file, this.pdfPath.length);
-        let minH = -1, maxH = -1, totalH = 0, counterH = 0, meanH = 0;
+    calculateMeanTextHeight = (pages: Array<any>) => {
+        
+        let minH = -1, maxH = -1, totalH = 0, counterH = 0;
         pages.forEach( (page) => {
             const textContent = page.textContent;
             textContent.items.forEach((item:any) => {
@@ -114,7 +112,21 @@ export class PDFContentExtractor {
             });
         });
 
-        meanH = totalH / counterH;
+        return totalH / counterH;
+    };
+
+    /**
+     * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
+     * @param file 
+     * @param fileCounter 
+     */
+    processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
+
+        const pages: Array<any> = await this.getContent(vault, file, fileCounter);
+        const subPath = this.subPathFactory(file, this.pdfPath.length);
+
+        let meanTextHeight : number = this.calculateMeanTextHeight(pages);
+
         const markdownStrings : string[] = [];
         let counter = 0;
         let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
@@ -128,7 +140,6 @@ export class PDFContentExtractor {
 
         // Make a parameter
         let includePageNumbersInFootnotes = true;
-        let annotationQuads = [];
 
         for (let j = 0; j < pages.length; j++) {
             const page = pages[j];
@@ -149,8 +160,8 @@ export class PDFContentExtractor {
                 let { str } = item;
                 const { dir, width, height, transform, fontName, hasEOL } = item;
 
-                // Do check for whether any annotation bounding boxes overlap with this item
                 // TODO: Refactor to a function
+                // Do check for whether any annotation bounding boxes overlap with this item
 
                 // Handle annotations - highlight and comments as footnotes
                 let highlightStart = false, highlightEnd = false;
@@ -253,8 +264,8 @@ export class PDFContentExtractor {
                     yDiff2 = yCoordLL - yCoord;
 
                 // If there's a change in height, a new line and an indentation, treat as a blockquote
-                if (height > 0 && height < meanH && i > 0 && leftMargin > leftMarginL) {
-                    const diffH = height / meanH - 1;
+                if (height > 0 && height < meanTextHeight && i > 0 && leftMargin > leftMarginL) {
+                    const diffH = height / meanTextHeight - 1;
                     if (hasEOLL) {
                         if (diffH < -0.2 && !blockquote) {
                             blockquote = true;
@@ -356,8 +367,8 @@ export class PDFContentExtractor {
                     let heading = '';
                     let headingPadding = '';
                     let headingTrail = '';
-                    if (height > meanH) {
-                        const diffH = height / meanH - 1;
+                    if (height > meanTextHeight) {
+                        const diffH = height / meanTextHeight - 1;
                         const headingSize = Math.ceil(0.5 / diffH);
                         if (headingSize <= 6) {
                             heading = "#".repeat(headingSize) + ' ';
