@@ -5,9 +5,11 @@ import { TopicLinkingSettings, TopicLinkingSettingTab, DEFAULT_SETTINGS } from '
 import { PDFContentExtractor } from './pdf';
 import { BookmarkContentExtractor } from './bookmark';
 import { TopicLinker } from './topic';
+import { BibtexParser } from './bibtex';
 
 export default class TopicLinkingPlugin extends Plugin {
     settings: TopicLinkingSettings;
+    metadata: Record<string, any>;
 
     async onload() {
         await this.loadSettings();
@@ -15,15 +17,27 @@ export default class TopicLinkingPlugin extends Plugin {
         // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
         const statusBarItemEl = this.addStatusBarItem();
 
+        // Parses a bibtex file and returns a list of keyed items
+        this.addCommand({
+            id: 'parse-bibtex-json-command',
+            name: 'Load Bibtex JSON',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "e" }],
+            callback: async () => {
+
+                this.metadata = await new BibtexParser().parse(this.app, this.settings);
+            }
+        });
+
         // This command extracts PDFs to Markdown
         this.addCommand({
             id: 'extract-md-from-pdfs-command',
             name: 'Extract Markdown from PDFs',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
             callback: async () => {
 
                 const { vault } = this.app;
 
-                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl);
+                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, this.metadata);
 
             }
         });
@@ -31,6 +45,7 @@ export default class TopicLinkingPlugin extends Plugin {
         this.addCommand({
             id: 'extract-md-from-bookmarks-command',
             name: 'Extract Markdown from Bookmarks',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "b" }],
             callback: async () => {
 
                 const { vault } = this.app;
@@ -44,6 +59,7 @@ export default class TopicLinkingPlugin extends Plugin {
         this.addCommand({
             id: 'link-topics-command',
             name: 'Link Topics',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "s" }],
             callback: async () => {
 
                 new TopicLinker().link(this.app, this.settings, statusBarItemEl);

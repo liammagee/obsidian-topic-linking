@@ -14,6 +14,7 @@ export interface TopicLinkingSettings {
     pdfExtractFileSizeLimit: number;
     pdfExtractChunkIfFileExceedsLimit: boolean;
     
+    pdfExtractIncludePagesAsHeadings: boolean;
     pdfExtractAnnotations: boolean;
     pdfExtractAnnotationsIncludeComments: boolean;
     pdfExtractAnnotationsIncludeCommentsAsCallouts: boolean;
@@ -37,6 +38,8 @@ export interface TopicLinkingSettings {
     ldaBurnIn: number;
     ldaThin: number;
     includeTags: boolean;
+
+    bibPath: string;
 }
 
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
@@ -47,6 +50,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfExtractFileSizeLimit: 5000,
     pdfExtractChunkIfFileExceedsLimit: true,
 
+    pdfExtractIncludePagesAsHeadings: true,
     pdfExtractAnnotations: true,
     pdfExtractAnnotationsIncludeComments: true,
     pdfExtractAnnotationsIncludeCommentsAsCallouts: true,
@@ -69,7 +73,9 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     ldaIterations: 1000,
     ldaBurnIn: 100,
     ldaThin: 10,
-    includeTags: false
+    includeTags: false,
+
+    bibPath: '/path/to/bib/file.bib',
 }
 
 export class TopicLinkingSettingTab extends PluginSettingTab {
@@ -86,6 +92,20 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
         containerEl.empty();
 
         containerEl.createEl('h2', { text: 'Topic Link Plugin' });
+
+        containerEl.createEl('h3', { text: 'Experimental' });
+		new Setting(containerEl)
+			.setName("Bibtex File")
+			.setDesc("Add Path to the *BetterBibTex Json* file to be imported")
+			.addText((text) =>
+				text
+					.setPlaceholder("/path/to/BetterBibTex.json")
+					.setValue(this.plugin.settings.bibPath.toString())
+					.onChange(async (value) => {
+						this.plugin.settings.bibPath = value;
+						await this.plugin.saveSettings();
+					})
+			);
 
         containerEl.createEl('h3', { text: 'General' });
         new Setting(containerEl)

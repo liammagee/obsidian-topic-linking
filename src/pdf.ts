@@ -3,6 +3,7 @@ import {
     TFile, 
     normalizePath,
     loadPdfJs } from 'obsidian';
+import { stringify } from 'querystring';
 import { TopicLinkingSettings } from './settings';
 
 
@@ -10,6 +11,7 @@ export class PDFContentExtractor {
     pdfjs: any;
     generatedPath: string;
     pdfPath: string;
+    metadata: Record<string,any>;
 
 
     /**
@@ -116,6 +118,145 @@ export class PDFContentExtractor {
     };
 
     /**
+     * 
+     * @param item 
+     * @param annotations 
+     * @param pageCounter 
+     * @returns 
+     */
+    applyAnnotations = (item: any, annotations: Array<any>, pageCounter: number) => {
+
+        const { dir, width, height, transform, fontName, hasEOL } = item;
+
+        let includePageNumbersInFootnotes = true;
+
+        let highlightStart = false, highlightEnd = false;
+        let highlightL = 0.0, highlightR = 1.0;
+        let comment = false;
+        let commentText = '';
+
+        let parentID = undefined;
+        let tp0 = { x: transform[4], y: transform[5] + height };
+        let tp1 = { x: transform[4] + width, y: transform[5] + height };
+        let tp2 = { x: transform[4], y: transform[5] };
+        let tp3 = { x: transform[4] + width, y: transform[5] };
+
+        // Allows for a gap between annotation and text boxes
+        const Y_FUDGE = 2.0;
+        for (let annotation of annotations) {
+            if (annotation.quadPoints !== undefined) {
+                for (let qi = 0; qi < annotation.quadPoints.length; qi++) {
+                    const quad = annotation.quadPoints[qi];
+                    // Do bounding box test
+                    const p0 = quad[0];
+                    const p1 = quad[1];
+                    const p2 = quad[2];
+                    const p3 = quad[3];
+
+                    // if (p0.x < tp0.x && p0.y > tp0.y - Y_FUDGE && p3.x > tp3.x && p3.y < tp3.y) {
+                    if (p0.y > tp0.y - Y_FUDGE && p3.y < tp3.y) {
+                        if (qi == 0) {
+                            highlightStart = true;
+                            if (p0.x > tp0.x) {
+                                highlightL = ((p0.x - tp0.x) / (tp3.x - tp0.x));
+                            }
+                        }
+                        // Only set the parent ID if this is the last quad
+                        // Because it is only then that we want to 
+                        // [1] flag any comments
+                        // [2] insert a footnote or attach comments to the text
+                        if (qi == annotation.quadPoints.length - 1) {
+                            if (p3.x < tp3.x) {
+                                highlightR = ((p3.x - tp0.x) / (tp3.x - tp0.x));
+                            }
+                            parentID = annotation.id;
+                            highlightEnd = true;
+                            if (annotation.contents.trim().length > 0) {
+                                comment = true;
+
+                                if (includePageNumbersInFootnotes && commentText === '') {
+                                    commentText = `[from page ${pageCounter + 1}] - `;
+                                }
+
+                                commentText += annotation.contents;
+                            }
+                        }
+                    }
+                }
+            }
+            else if (parentID !== undefined) {
+                if (annotation.parentID == parentID) {
+                    if (annotation.type == 'Highlight') {
+                        // highlightStart = true;
+                    }
+                    else if (annotation.type == 'Comment') {
+                        comment = true;
+                        commentText += annotation.contents;
+                    }
+                }
+                else if (annotation.inReplyTo == parentID) {
+                    comment = true;
+                    commentText += annotation.contents;
+                }
+            }
+        }
+
+        return { highlightStart: highlightStart, highlightEnd: highlightEnd, highlightL: highlightL, highlightR: highlightR, comment: comment, commentText: commentText };
+    }
+    
+    /**
+     * 
+     * @param highlightStart 
+     * @param str 
+     * @param highlightL 
+     * @param highlightEnd 
+     * @param highlightR 
+     * @param comment 
+     * @param footnoteCounter 
+     * @param footnotes 
+     * @param commentText 
+     * @returns 
+     */
+    processHighlights(highlightStart: boolean, str: any, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnoteCounter: number, footnotes: Record<number, string>, commentText: string) {
+        let highlightedText : string = '';
+        if (highlightStart) {
+            let sl = str.length;
+            if (sl > 0) {
+                let hl = Math.floor(sl * highlightL);
+                if (hl > 0 && str.charAt(hl) === ' ')
+                    hl += 1;
+                let highlightText1 = str.substr(0, hl);
+                let highlightText2 = str.substr(hl);
+
+                str = highlightText1 + `==${highlightText2}`;
+                highlightedText += highlightText2;
+            }
+        }
+        if (highlightEnd) {
+            let sl = str.length;
+            if (sl > 0) {
+                let hr = Math.ceil(sl * highlightR);
+                // Add the two highlight characters if part of the same block
+                if (highlightStart)
+                    hr += 2;
+                let highlightText1 = str.substr(0, hr);
+                let highlightText2 = str.substr(hr);
+
+                // Add the footnote marker here
+                if (comment) {
+                    highlightText1 += `[^${footnoteCounter}]`;
+                    footnotes[footnoteCounter] = commentText;
+                    footnoteCounter++;
+                }
+
+                str = highlightText1 + `==${highlightText2}`;
+                highlightedText += highlightText1;
+            }
+        }
+        return { str, highlightedText, footnoteCounter };
+    }
+
+    /**
      * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
      * @param file 
      * @param fileCounter 
@@ -135,11 +276,12 @@ export class PDFContentExtractor {
         let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
         let pageCounter = 0;
         
+        // ANNOTATION DATA
+        // For footnotes
         let footnoteCounter = 1;
         let footnotes : Record<number, string> = {};
-
-        // Make a parameter
-        let includePageNumbersInFootnotes = true;
+        // For annotation metadata
+        let annotationMetadata : any[] = [];
 
         for (let j = 0; j < pages.length; j++) {
             const page = pages[j];
@@ -154,89 +296,27 @@ export class PDFContentExtractor {
             // Make this a parameter perhaps
             const treatEOLasNewLine = false;
 
+            // For highlights
+            let highlightAccumulate : boolean = false;
+            let highlightAccumulator : string = '';
+
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
                 let markdownText = '';
                 let { str } = item;
                 const { dir, width, height, transform, fontName, hasEOL } = item;
-
-                // TODO: Refactor to a function
-                // Do check for whether any annotation bounding boxes overlap with this item
-
-                // Handle annotations - highlight and comments as footnotes
-                let highlightStart = false, highlightEnd = false;
-                let highlightL = 0.0, highlightR = 1.0;
-                let comment = false;
-                let commentText = '';
-                let parentID = undefined;
-
-                let tp0 = { x: transform[4], y: transform[5] + height };
-                let tp1 = { x: transform[4] + width, y: transform[5] + height };
-                let tp2 = { x: transform[4], y: transform[5] };
-                let tp3 = { x: transform[4] + width, y: transform[5] };
-
-                // Allows for a gap between annotation and text boxes
-                const Y_FUDGE = 2.0;
-                for (let annotation of annotations) {
-                    if (annotation.quadPoints !== undefined) {
-                        for (let qi = 0; qi < annotation.quadPoints.length; qi++) {
-                            const quad = annotation.quadPoints[qi];
-                            // Do bounding box test
-                            const p0 = quad[0];
-                            const p1 = quad[1];
-                            const p2 = quad[2];
-                            const p3 = quad[3];
-
-                            // if (p0.x < tp0.x && p0.y > tp0.y - Y_FUDGE && p3.x > tp3.x && p3.y < tp3.y) {
-                            if (p0.y > tp0.y - Y_FUDGE && p3.y < tp3.y) {
-                                if (qi == 0) {
-                                    highlightStart = true;
-                                    if (p0.x > tp0.x) {
-                                        highlightL = ((p0.x - tp0.x) / (tp3.x - tp0.x));
-                                    }
-                                }
-                                // Only set the parent ID if this is the last quad
-                                // Because it is only then that we want to 
-                                // [1] flag any comments
-                                // [2] insert a footnote or attach comments to the text
-                                if (qi == annotation.quadPoints.length - 1) {
-                                    if (p3.x < tp3.x) {
-                                        highlightR = ((p3.x - tp0.x) / (tp3.x - tp0.x));
-                                    }
-                                    parentID = annotation.id;
-                                    highlightEnd = true;
-                                    if (annotation.contents.trim().length > 0) {
-                                        comment = true;
-
-                                        if (includePageNumbersInFootnotes && commentText === '') {
-                                            commentText = `[from page ${pageCounter + 1}] - `;
-                                        }
-
-                                        commentText += annotation.contents;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else if (parentID !== undefined) {
-                        if (annotation.parentID == parentID) {
-                            if (annotation.type == 'Highlight') {
-                                // highlightStart = true;
-                            }
-                            else if (annotation.type == 'Comment') {
-                                comment = true;
-                                commentText += annotation.contents;
-                            }
-                        }
-                        else if (annotation.inReplyTo == parentID) {
-                            comment = true;
-                            commentText += annotation.contents;
-                        }
-                    }
-                }
-
                 let leftMargin = parseFloat(transform[4]);
                 let yCoord = parseFloat(transform[5]);
+
+                // Do check for whether any annotation bounding boxes overlap with this item
+                // Handle annotations - highlight and comments as footnotes
+                let { highlightStart, highlightEnd, highlightL, highlightR, comment, commentText} = this.applyAnnotations(item, annotations, pageCounter);
+                if (highlightStart) {
+                    highlightAccumulate = true;
+                    highlightAccumulator = '';
+                }
+
+                // Italic, bold formatting
                 let italicised = false, bolded = false;
                 const font = commonObjs[fontName];
                 if (font) {
@@ -251,10 +331,19 @@ export class PDFContentExtractor {
                 else if (bolded && str.trim().length > 0)
                     str = `**${str.trim()}**${trailingSpace}`;
 
-
                 // Handle any highlighting
-                ({ str, footnoteCounter } = this.processHighlights(highlightStart, str, highlightL, highlightEnd, highlightR, comment, footnoteCounter, footnotes, commentText));
-
+                let highlightedText = '';
+                ({ str, highlightedText, footnoteCounter } = this.processHighlights(highlightStart, str, highlightL, highlightEnd, highlightR, comment, footnoteCounter, footnotes, commentText));
+                if (highlightAccumulate) {
+                    if (highlightedText.length > 0)
+                        highlightAccumulator += highlightedText + ' ';
+                    else
+                        highlightAccumulator += str + ' ';
+                }
+                if (highlightEnd) {
+                    annotationMetadata.push({highlightText: highlightAccumulator, page: (pageCounter + 1), commentText: commentText});
+                    highlightAccumulate = false;
+                }
                     
                 let yDiff = 0;
                 let yDiff2 = 0;
@@ -295,7 +384,8 @@ export class PDFContentExtractor {
                     // If the last character was a hyphen, remove it
                     if (strL.endsWith('-')) {
                         // Removes hyphens - this is not usually the right behaviour though
-                        // markdownStrings[counter] = strL.substring(0, strL.length - 1);
+                        markdownStrings[counter] = strL.substring(0, strL.length - 1);
+                        counter++;
                         newLine = false;
                     }
                     // In this case, assume a new line
@@ -376,6 +466,16 @@ export class PDFContentExtractor {
                             headingTrail = "\n".repeat(2);
                         }
                     }
+                    // In the case where all the text is upper case, treat as a level 3 heading
+                    // TODO: Probably needs to be another heading
+                    if (str.trim() !== '' && str.search(/[A-Z]/) >= 0 && str.toUpperCase() === str) {
+                        const headingSize = 3;
+                        if (headingSize <= 6) {
+                            heading = "#".repeat(headingSize) + ' ';
+                            headingPadding = "\n".repeat(7 - headingSize);
+                            headingTrail = "\n".repeat(2);
+                        }
+                    }
                 
                     markdownText += headingPadding;
                     markdownText += heading;
@@ -386,6 +486,10 @@ export class PDFContentExtractor {
                 // Important! Escape all double brackets, and double spaces with single spaces
                 markdownText = markdownText.replaceAll('[[', `\\[\\[`).replaceAll('  ', ' ');
 
+                if (i == 0 && settings.pdfExtractIncludePagesAsHeadings) {
+                    counter++;
+                    markdownStrings.push(`\n\n---\n## Page ${j + 1}\n\n`);
+                }
                 counter++;
                 markdownStrings.push(markdownText);
 
@@ -412,11 +516,31 @@ export class PDFContentExtractor {
                 yCoordL = yCoord;
 
             }
+            
             pageCounter++;
         }
 
         let markdownContents = markdownStrings.join('');
-        markdownContents = `Source file: [[${file.path}]]\n\n${markdownContents}`;
+        let metadataContents = `**Source file:** [[${file.path}]]`;
+        // console.log(file.basename, this.metadata[file.basename])
+        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
+            const itemMeta = this.metadata[file.basename];
+            // console.log(itemMeta);
+            metadataContents += `\n**Citation Key:** ${itemMeta.citationKey}`;
+            metadataContents += `\n**Title:** ${itemMeta.title}`;
+            metadataContents += `\n**Authors:** ${itemMeta.creators.map((author:any) => author.lastName + ', ' + author.firstName).join('; ')}`;
+            metadataContents += `\n**Abstract:** ${itemMeta.abstractNote}`;
+            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
+         
+        }
+        metadataContents += `\n\n### Annotations\n`;
+        for (let annotation of annotationMetadata) {
+            metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
+            if (annotation.commentText !== '')
+                metadataContents += `**${annotation.commentText}**`;
+        }
+
+        markdownContents = `${metadataContents}\n\n${markdownContents}`;
 
         // Add any footnotes 
         for (let footnoteID in footnotes) {
@@ -449,44 +573,8 @@ export class PDFContentExtractor {
                 await vault.create(fileName, markdownContents);
         }
     };
-    
-    private processHighlights(highlightStart: boolean, str: any, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnoteCounter: number, footnotes: Record<number, string>, commentText: string) {
-        if (highlightStart) {
-            let sl = str.length;
-            if (sl > 0) {
-                let hl = Math.floor(sl * highlightL);
-                if (hl > 0 && str.charAt(hl) === ' ')
-                    hl += 1;
-                let highlightText1 = str.substr(0, hl);
-                let highlightText2 = str.substr(hl);
 
-                str = highlightText1 + `==${highlightText2}`;
-            }
-        }
-        if (highlightEnd) {
-            let sl = str.length;
-            if (sl > 0) {
-                let hr = Math.ceil(sl * highlightR);
-                // Add the two highlight characters if part of the same block
-                if (highlightStart)
-                    hr += 2;
-                let highlightText1 = str.substr(0, hr);
-                let highlightText2 = str.substr(hr);
-
-                // Add the footnote marker here
-                if (comment) {
-                    highlightText1 += `[^${footnoteCounter}]`;
-                    footnotes[footnoteCounter] = commentText;
-                    footnoteCounter++;
-                }
-
-                str = highlightText1 + `==${highlightText2}`;
-            }
-        }
-        return { str, footnoteCounter };
-    }
-
-    async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement) {
+    async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement, metadata: Record<string, any>) {
         
         // Load PdfJs
 		this.pdfjs = await loadPdfJs();
@@ -495,6 +583,7 @@ export class PDFContentExtractor {
 
         this.generatedPath = settings.generatedPath;
         this.pdfPath = settings.pdfPath;
+        this.metadata = metadata;
         const fileNumberLimit = settings.pdfExtractFileNumberLimit;
         const fileSizeLimit = settings.pdfExtractFileSizeLimit;
         const chunkIfFileExceedsLimit = settings.pdfExtractChunkIfFileExceedsLimit;
