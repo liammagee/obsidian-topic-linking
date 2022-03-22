@@ -521,17 +521,22 @@ export class PDFContentExtractor {
         }
 
         let markdownContents = markdownStrings.join('');
-        let metadataContents = `**Source file:** [[${file.path}]]`;
+        let metadataContents = `---`;
+        metadataContents += `\nSource: [[${file.path}]]`;
         // console.log(file.basename, this.metadata[file.basename])
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
             const itemMeta = this.metadata[file.basename];
             // console.log(itemMeta);
-            metadataContents += `\n**Citation Key:** ${itemMeta.citationKey}`;
-            metadataContents += `\n**Title:** ${itemMeta.title}`;
-            metadataContents += `\n**Authors:** ${itemMeta.creators.map((author:any) => author.lastName + ', ' + author.firstName).join('; ')}`;
-            metadataContents += `\n**Abstract:** ${itemMeta.abstractNote}`;
+            metadataContents += `\nCitationKey: ${itemMeta.citationKey}`;
+            metadataContents += `\nTitle: "${itemMeta.title}"`;
+            metadataContents += `\nAuthors: "${itemMeta.creators.map((author:any) => author.lastName + ', ' + author.firstName).join('; ')}"`;
+            metadataContents += `\nAbstract: "${itemMeta.abstractNote}"`;
+            metadataContents += `\n---`;
             metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
          
+        }
+        else {
+            metadataContents += `\n---`;
         }
         metadataContents += `\n\n### Annotations\n`;
         for (let annotation of annotationMetadata) {
