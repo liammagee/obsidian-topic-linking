@@ -26,7 +26,7 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 const { vault } = this.app;
 
-                if (this.settings.bibPath != '') {
+                if (this.settings.bibPath.trim() !== '') {
                     this.metadata = await new BibtexParser().parse(this.app, this.settings);
                 }
                 

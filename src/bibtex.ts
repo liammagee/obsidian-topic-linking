@@ -15,7 +15,7 @@ export class BibtexParser {
 
     async parse(app: App, settings: TopicLinkingSettings) {
 
-        const bibPath = settings.bibPath;
+        const bibPath = settings.bibPath.trim();
         const bibFile = <TFile>app.vault.getAbstractFileByPath(bibPath);
         const buffer = await app.vault.read(bibFile);
 		const data = JSON.parse(buffer.toString()); 

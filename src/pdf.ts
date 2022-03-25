@@ -317,33 +317,12 @@ export class PDFContentExtractor {
                 }
 
                 // Italic, bold formatting
-                let italicised = false, bolded = false;
-                const font = commonObjs[fontName];
-                if (font) {
-                    const fontDataName = font.data.name;
-                    italicised = fontDataName.indexOf('Italic') > -1;
-                    bolded = fontDataName.indexOf('Bold') > -1;
-                }
-                const leadingSpace = str.startsWith(' ') ? ' ' : '';
-                const trailingSpace = str.endsWith(' ') ? ' ' : '';
-                if (italicised && str.trim().length > 0)
-                    str = `*${str.trim()}*${trailingSpace}`;
-                else if (bolded && str.trim().length > 0)
-                    str = `**${str.trim()}**${trailingSpace}`;
+                let leadingSpace;
+                let trailingSpace;
+                ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
 
                 // Handle any highlighting
-                let highlightedText = '';
-                ({ str, highlightedText, footnoteCounter } = this.processHighlights(highlightStart, str, highlightL, highlightEnd, highlightR, comment, footnoteCounter, footnotes, commentText));
-                if (highlightAccumulate) {
-                    if (highlightedText.length > 0)
-                        highlightAccumulator += highlightedText + ' ';
-                    else
-                        highlightAccumulator += str + ' ';
-                }
-                if (highlightEnd) {
-                    annotationMetadata.push({highlightText: highlightAccumulator, page: (pageCounter + 1), commentText: commentText});
-                    highlightAccumulate = false;
-                }
+                ({ highlightAccumulate, highlightAccumulator } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, comment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
                     
                 let yDiff = 0;
                 let yDiff2 = 0;
@@ -353,23 +332,7 @@ export class PDFContentExtractor {
                     yDiff2 = yCoordLL - yCoord;
 
                 // If there's a change in height, a new line and an indentation, treat as a blockquote
-                if (height > 0 && height < meanTextHeight && i > 0 && leftMargin > leftMarginL) {
-                    const diffH = height / meanTextHeight - 1;
-                    if (hasEOLL) {
-                        if (diffH < -0.2 && !blockquote) {
-                            blockquote = true;
-                            markdownText += `\n\n> `;
-                        }
-                    }
-                    // Treat as a footnote subscript, if this is not the first line (in which case it's likely a continuation)
-                    else if (!blockquote) {
-                        str = `${leadingSpace}[${str.trim()}]${trailingSpace}`;
-                    }
-                }
-                else if (blockquote && str.trim().length > 0 && strL.trim().length === 0) {
-                    blockquote = false;
-                    markdownText += `\n\n`;
-                }
+                ({ blockquote, markdownText, str } = this.blockquoteHandler(height, meanTextHeight, i, leftMargin, leftMarginL, hasEOLL, blockquote, markdownText, str, leadingSpace, trailingSpace, strL));
 
                 // Rules for handling 'code'-like strings. The main purpose here is to escape link-like syntax ('[[', ']]')
                 if ((str.indexOf('//=>') == 0 ||
@@ -382,100 +345,17 @@ export class PDFContentExtractor {
                 // Non-newline conditions
                 else if (strL.trim() != '' && hasEOLL && heightL == height) {
                     // If the last character was a hyphen, remove it
-                    if (strL.endsWith('-')) {
-                        // Removes hyphens - this is not usually the right behaviour though
-                        markdownStrings[counter] = strL.substring(0, strL.length - 1);
-                        counter++;
-                        newLine = false;
-                    }
-                    // In this case, assume a new line
-                    else if (!blockquote && Math.floor(widthL) != Math.floor(width) && 
-                        ((treatEOLasNewLine && hasEOL) || 
-                        strL.substring(strL.length - 1).match(/[\u{2019}?.:-]/u) != null)) {
-
-                        // For the very last line (i.e. indicated by the current counter being the first line of a new page), do not add new lines
-                        if (blockquote) {
-                            markdownStrings[counter - 1] = markdownStrings[counter - 1] + '\n';
-                        }
-                        else if (i > 0) {
-
-                            let lines = Math.floor(yDiff  / height);
-                            lines = lines < 1 ? 1 : lines;
-                            let linePadding = '\n'.repeat(lines);
-                            // If the line is indented, add another line
-                            if (lines > 0 && leftMargin > leftMarginL) 
-                                linePadding += '\n';
-                            markdownStrings[counter - 1] = markdownStrings[counter - 1] + linePadding;
-                            newLine = true;
-                        }
-                        inCode = false;
-                    }
-                    // Otherwise, do not create a new line. Just append the text, with a trailing space
-                    else {
-                        markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
-                        newLine = false;
-                    }
-                    markdownText += str;
+                    ({ counter, newLine, inCode, markdownText } = this.continuedLineHandler(strL, markdownStrings, counter, newLine, blockquote, widthL, width, treatEOLasNewLine, hasEOL, i, yDiff, height, leftMargin, leftMarginL, inCode, markdownText, str));
                 }
                 // In this (default) case we assume a new line
                 else {
-                    /*
-                    In Case 1: 
-                     - two items back has text at a certain y coordinate
-                     - one line back has a zero-length string, and is an EOL marker
-                     - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
-                     */
-                    if (hasEOLL && strL.trim() === "" && yDiff2 > height * 2) {   
-                        let lines = Math.floor(yDiff2  / height);
-                        lines = lines < 1 ? 1 : lines;
-                        const linePadding = '\n'.repeat(lines);
-                        markdownStrings[counter - 2] = markdownStrings[counter - 2] + (inCode ? "`" : "") + linePadding;
-                    }
-                    /*
-                    In Case 2: 
-                     - two items back has text at a certain y coordinate
-                     - one line back has a zero-length string, and is an EOL marker
-                     - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
-                     */
-                    else if (hasEOLL && strL.trim() === "" && yDiff > height) {   
-                        let lines = Math.floor(yDiff  / height);
-                        lines = lines < 1 ? 1 : lines;
-                        const linePadding = '\n' + '\n'.repeat(lines);
-                        markdownStrings[counter - 1] = markdownStrings[counter - 1] + (inCode ? "`" : "") + linePadding;
-                    }
-                    /*
-                    Case 3: New page - add a trailing space to the last line
-                    */
-                    else if (i === 0) {
-                        markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
-                    }
+                    this.lineEndingHandler(hasEOLL, strL, yDiff2, height, markdownStrings, counter, inCode, yDiff, i);
 
                     inCode = false;
                     newLine = true;
 
                     // Treat as a heading, and calculate the heading size by the height of the line
-                    let heading = '';
-                    let headingPadding = '';
-                    let headingTrail = '';
-                    if (height > meanTextHeight) {
-                        const diffH = height / meanTextHeight - 1;
-                        const headingSize = Math.ceil(0.5 / diffH);
-                        if (headingSize <= 6) {
-                            heading = "#".repeat(headingSize) + ' ';
-                            headingPadding = "\n".repeat(7 - headingSize);
-                            headingTrail = "\n".repeat(2);
-                        }
-                    }
-                    // In the case where all the text is upper case, treat as a level 3 heading
-                    // TODO: Probably needs to be another heading
-                    if (str.trim() !== '' && str.search(/[A-Z]/) >= 0 && str.toUpperCase() === str) {
-                        const headingSize = 3;
-                        if (headingSize <= 6) {
-                            heading = "#".repeat(headingSize) + ' ';
-                            headingPadding = "\n".repeat(7 - headingSize);
-                            headingTrail = "\n".repeat(2);
-                        }
-                    }
+                    let { headingPadding, heading, headingTrail } = this.headingHandler(height, meanTextHeight, str);
                 
                     markdownText += headingPadding;
                     markdownText += heading;
@@ -578,6 +458,161 @@ export class PDFContentExtractor {
                 await vault.create(fileName, markdownContents);
         }
     };
+
+    private continuedLineHandler(strL: string, markdownStrings: string[], counter: number, newLine: boolean, blockquote: boolean, widthL: number, width: any, treatEOLasNewLine: boolean, hasEOL: any, i: number, yDiff: number, height: any, leftMargin: number, leftMarginL: number, inCode: boolean, markdownText: string, str: any) {
+        if (strL.endsWith('-')) {
+            // Removes hyphens - this is not usually the right behaviour though
+            markdownStrings[counter] = strL.substring(0, strL.length - 1);
+            counter++;
+            newLine = false;
+        }
+
+        // In this case, assume a new line
+        else if (!blockquote && Math.floor(widthL) != Math.floor(width) &&
+            ((treatEOLasNewLine && hasEOL) ||
+                strL.substring(strL.length - 1).match(/[\u{2019}?.:-]/u) != null)) {
+
+            // For the very last line (i.e. indicated by the current counter being the first line of a new page), do not add new lines
+            if (blockquote) {
+                markdownStrings[counter - 1] = markdownStrings[counter - 1] + '\n';
+            }
+            else if (i > 0) {
+
+                let lines = Math.floor(yDiff / height);
+                lines = lines < 1 ? 1 : lines;
+                let linePadding = '\n'.repeat(lines);
+                // If the line is indented, add another line
+                if (lines > 0 && leftMargin > leftMarginL)
+                    linePadding += '\n';
+                markdownStrings[counter - 1] = markdownStrings[counter - 1] + linePadding;
+                newLine = true;
+            }
+            inCode = false;
+        }
+
+        // Otherwise, do not create a new line. Just append the text, with a trailing space
+        else {
+            markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
+            newLine = false;
+        }
+        markdownText += str;
+        return { counter, newLine, inCode, markdownText };
+    }
+
+    private lineEndingHandler(hasEOLL: boolean, strL: string, yDiff2: number, height: any, markdownStrings: string[], counter: number, inCode: boolean, yDiff: number, i: number) {
+        /*
+        In Case 1: 
+        - two items back has text at a certain y coordinate
+        - one line back has a zero-length string, and is an EOL marker
+        - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
+        */
+        if (hasEOLL && strL.trim() === "" && yDiff2 > height * 2) {
+            let lines = Math.floor(yDiff2 / height);
+            lines = lines < 1 ? 1 : lines;
+            const linePadding = '\n'.repeat(lines);
+            markdownStrings[counter - 2] = markdownStrings[counter - 2] + (inCode ? "`" : "") + linePadding;
+        }
+        /*
+        In Case 2:
+         - two items back has text at a certain y coordinate
+         - one line back has a zero-length string, and is an EOL marker
+         - this line has a y coordinate that is greater than twice the current line height apart from the previous text coordinate
+         */
+        else if (hasEOLL && strL.trim() === "" && yDiff > height) {
+            let lines = Math.floor(yDiff / height);
+            lines = lines < 1 ? 1 : lines;
+            const linePadding = '\n' + '\n'.repeat(lines);
+            markdownStrings[counter - 1] = markdownStrings[counter - 1] + (inCode ? "`" : "") + linePadding;
+        }
+        /*
+        Case 3: New page - add a trailing space to the last line
+        */
+        else if (i === 0) {
+            markdownStrings[counter - 1] = strL + (strL.endsWith(" ") ? "" : " ");
+        }
+    }
+
+    private headingHandler(height: any, meanTextHeight: number, str: any) {
+        let heading = '';
+        let headingPadding = '';
+        let headingTrail = '';
+        if (height > meanTextHeight) {
+            const diffH = height / meanTextHeight - 1;
+            const headingSize = Math.ceil(0.5 / diffH);
+            if (headingSize <= 6) {
+                heading = "#".repeat(headingSize) + ' ';
+                headingPadding = "\n".repeat(7 - headingSize);
+                headingTrail = "\n".repeat(2);
+            }
+        }
+        // In the case where all the text is upper case, treat as a level 3 heading
+        // TODO: Probably needs to be another heading
+        if (str.trim() !== '' && str.search(/[A-Z]/) >= 0 && str.toUpperCase() === str) {
+            const headingSize = 3;
+            if (headingSize <= 6) {
+                heading = "#".repeat(headingSize) + ' ';
+                headingPadding = "\n".repeat(7 - headingSize);
+                headingTrail = "\n".repeat(2);
+            }
+        }
+        return { headingPadding, heading, headingTrail };
+    }
+
+    private highlightHandler(str: any, footnoteCounter: number, highlightStart: boolean, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnotes: Record<number, string>, commentText: string, highlightAccumulate: boolean, highlightAccumulator: string, annotationMetadata: any[], pageCounter: number) {
+        let highlightedText = '';
+        ({ str, highlightedText, footnoteCounter } = this.processHighlights(highlightStart, str, highlightL, highlightEnd, highlightR, comment, footnoteCounter, footnotes, commentText));
+        if (highlightAccumulate) {
+            if (highlightedText.length > 0)
+                highlightAccumulator += highlightedText + ' ';
+
+            else
+                highlightAccumulator += str + ' ';
+        }
+        if (highlightEnd) {
+            annotationMetadata.push({ highlightText: highlightAccumulator, page: (pageCounter + 1), commentText: commentText });
+            highlightAccumulate = false;
+        }
+        return { highlightAccumulate, highlightAccumulator };
+    }
+
+    private blockquoteHandler(height: any, meanTextHeight: number, i: number, leftMargin: number, leftMarginL: number, hasEOLL: boolean, blockquote: boolean, markdownText: string, str: any, leadingSpace: string, trailingSpace: string, strL: string) {
+        if (height > 0 && height < meanTextHeight && i > 0 && leftMargin > leftMarginL) {
+            const diffH = height / meanTextHeight - 1;
+            if (hasEOLL) {
+                if (diffH < -0.2 && !blockquote) {
+                    blockquote = true;
+                    markdownText += `\n\n> `;
+                }
+            }
+
+            // Treat as a footnote subscript, if this is not the first line (in which case it's likely a continuation)
+            else if (!blockquote) {
+                str = `${leadingSpace}[${str.trim()}]${trailingSpace}`;
+            }
+        }
+        else if (blockquote && str.trim().length > 0 && strL.trim().length === 0) {
+            blockquote = false;
+            markdownText += `\n\n`;
+        }
+        return { blockquote, markdownText, str };
+    }
+
+    private formatHandler(commonObjs: any, fontName: any, str: any) {
+        let italicised = false, bolded = false;
+        const font = commonObjs[fontName];
+        if (font) {
+            const fontDataName = font.data.name;
+            italicised = fontDataName.indexOf('Italic') > -1;
+            bolded = fontDataName.indexOf('Bold') > -1;
+        }
+        const leadingSpace = str.startsWith(' ') ? ' ' : '';
+        const trailingSpace = str.endsWith(' ') ? ' ' : '';
+        if (italicised && str.trim().length > 0)
+            str = `*${str.trim()}*${trailingSpace}`;
+        else if (bolded && str.trim().length > 0)
+            str = `**${str.trim()}**${trailingSpace}`;
+        return { leadingSpace, trailingSpace, str };
+    }
 
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement, metadata: Record<string, any>) {
         
