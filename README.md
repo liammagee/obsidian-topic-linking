@@ -28,6 +28,17 @@ The *Extract PDF Content* command uses *Obsidian*'s built-in PDF parser to conve
 - *Limit file size*: the maximum size of files to process. The meaning of 'file' (either the PDF source or generated Markdown) depends upon whether *Chunk file if size exceeds limit* is set. 
 - *Chunk file if size exceeds limit*: if *Limit file size* is set, and Markdown files greater than this size are likely to be produced, the command will instead try to split the generated text across multiple smaller files. 
 
+#### Experimental Settings
+
+Several additional 'experimental' settings allow for some customisation:
+
+ - *Include Pages As Headings*: Inserts *Page X* headings into the generated Markdown. This can be useful for linking to specific pages.
+ - *Extract Annotations*: Extracts annotations from PDF as highlights.
+ - *Include Comments with Annotations*: Includes any comments attached to extracted annotations as endnotes.
+ - *Bibtex File*: This is a feature copied from (BibNotes)[https://github.com/stefanopagliari/bibnotes]. If a valid Zotero export (in Better BibTex JSON format) file location is specified here, Zotero metadata will be included in the generated Markdown.
+
+
+ 
 The *Extract Web Link-Generated Content* command scans a folder (the default is named *Bookmarks*) for web links in Markdown files - anything beginning with *http(s)://*. It takes two parameters:
 - *Bookmark files*: where to locate files containing links for processing
 - *Overwrite Web Links*: whether to overwrite existing generated Markdown files with the same name
@@ -68,12 +79,8 @@ An example use case of this plugin involves the following scenario: a collection
 2. A number of the generated files include the term 'Data' in their file name, and this is a general subject  of interest. The *Topic File Pattern* Settings field is set to 'Generated/*Data*' (using a *glob*-style pattern).
 3. Some of these files are books, containing more than 50K words. There are also a large number of files (~100) meeting this pattern. The *Fixed Number of Words* Settings field is set to *1,000*, to ensure topic mapping and linking executes in reasonable time. The *Randomise Text* field is also set to true, so that front matter (containing copyright and Table of Contents) is often ignored.
 4. The *Link Topics* command is then executed, producing 10 topic files that map associated keywords and relevant documents. A *Topic Index* file links all of the files together, and includes a convenience check list of all documents matching the file pattern, which can be used to flag which documents have been read or cited.
- 
-<!-- 
-### Integration with other plugins
 
-...
--->
+
 
 ### Github link
 

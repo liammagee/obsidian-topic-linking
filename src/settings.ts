@@ -18,6 +18,7 @@ export interface TopicLinkingSettings {
     pdfExtractAnnotations: boolean;
     pdfExtractAnnotationsIncludeComments: boolean;
     pdfExtractAnnotationsIncludeCommentsAsCallouts: boolean;
+    bibPath: string;
 
     bookmarkPath: string;
     bookmarkOverwrite: boolean;
@@ -39,7 +40,7 @@ export interface TopicLinkingSettings {
     ldaThin: number;
     includeTags: boolean;
 
-    bibPath: string;
+    
 }
 
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
@@ -54,6 +55,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfExtractAnnotations: true,
     pdfExtractAnnotationsIncludeComments: true,
     pdfExtractAnnotationsIncludeCommentsAsCallouts: true,
+    bibPath: '',
 
     bookmarkPath: 'Bookmarks/',
     bookmarkOverwrite: false,
@@ -73,9 +75,9 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     ldaIterations: 1000,
     ldaBurnIn: 100,
     ldaThin: 10,
+
     includeTags: false,
 
-    bibPath: '/path/to/bib/file.bib',
 }
 
 export class TopicLinkingSettingTab extends PluginSettingTab {
@@ -93,19 +95,6 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h2', { text: 'Topic Link Plugin' });
 
-        containerEl.createEl('h3', { text: 'Experimental' });
-		new Setting(containerEl)
-			.setName("Bibtex File")
-			.setDesc("Add Path to the *BetterBibTex Json* file to be imported")
-			.addText((text) =>
-				text
-					.setPlaceholder("/path/to/BetterBibTex.json")
-					.setValue(this.plugin.settings.bibPath.toString())
-					.onChange(async (value) => {
-						this.plugin.settings.bibPath = value;
-						await this.plugin.saveSettings();
-					})
-			);
 
         containerEl.createEl('h3', { text: 'General' });
         new Setting(containerEl)
@@ -178,6 +167,53 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     });
             });
+
+        containerEl.createEl('h4', { text: 'Experimental' });
+        new Setting(containerEl)
+            .setName('Include Pages As Headings')
+            .setDesc('Inserts *Page X* headings into the generated Markdown. This can be useful for linking to specific pages.')
+            .addToggle((toggle) => {
+                // toggle.inputEl.setAttribute("type", "boolean");
+                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                    .onChange(async (value) => {
+                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Extract Annotations')
+            .setDesc('Extracts annotations from PDF as highlights.')
+            .addToggle((toggle) => {
+                // toggle.inputEl.setAttribute("type", "boolean");
+                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                    .onChange(async (value) => {
+                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Include Comments with Annotations')
+            .setDesc('Includes any comments attached to extracted annotations as endnotes.')
+            .addToggle((toggle) => {
+                // toggle.inputEl.setAttribute("type", "boolean");
+                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                    .onChange(async (value) => {
+                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName("Bibtex File")
+            .setDesc("Add Path to the *BetterBibTex JSON* file to be imported. A valid path should")
+            .addText((text) =>
+                text
+                    .setPlaceholder("")
+                    .setValue(this.plugin.settings.bibPath.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.bibPath = value;
+                        await this.plugin.saveSettings();
+                    })
+            );
 
         containerEl.createEl('h3', { text: 'Bookmark Extraction Settings' });
         new Setting(containerEl)
