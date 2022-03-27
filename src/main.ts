@@ -1,4 +1,6 @@
-import { Plugin } from 'obsidian';
+import { Plugin, 
+    TFile, 
+    normalizePath, } from 'obsidian';
 
 // Internal imports
 import { TopicLinkingSettings, TopicLinkingSettingTab, DEFAULT_SETTINGS } from './settings';
@@ -6,11 +8,13 @@ import { PDFContentExtractor } from './pdf';
 import { BookmarkContentExtractor } from './bookmark';
 import { TopicLinker } from './topic';
 import { BibtexParser } from './bibtex';
-import { CSLGenerator } from './csl';
+import { CiteprocFactory } from './citeproc';
+import { formatBibtexAsMetadata } from './utils';
 
 export default class TopicLinkingPlugin extends Plugin {
     settings: TopicLinkingSettings;
     metadata: Record<string, any>;
+    citeproc: CSLGenerator;
 
     async onload() {
         await this.loadSettings();
@@ -18,17 +22,46 @@ export default class TopicLinkingPlugin extends Plugin {
         // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
         const statusBarItemEl = this.addStatusBarItem();
 
+        let metadata = {};
+        if (this.settings.bibPath.trim() !== '') {
+            metadata = await new BibtexParser().parse(this.app, this.settings);
+        }
+        let factory = new CiteprocFactory();
+        await factory.initEngine(metadata, this.settings);
+        let styles = await factory.wrapper.getStyles();
+
         // This command generates citeproc content
         this.addCommand({
-            id: 'citeproc',
-            name: 'Citeproc',
+            id: 'make-bibliography',
+            name: 'Make Bibliography',
             hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
             callback: async () => {
 
-                if (this.settings.bibPath.trim() !== '') {
-                    this.metadata = await new BibtexParser().parse(this.app, this.settings);
-                    new CSLGenerator().generate(this.metadata);
+                if (this.settings.bibPath.trim() === '') {
+                    console.log('Must specific bibliography path');
+                    return;
                 }
+
+                const { vault } = this.app;
+
+                const keys = Object.keys(metadata);
+                let bibtex = '---';
+                for (let key in metadata) {
+                    let itemMeta = metadata[key];
+                    bibtex += formatBibtexAsMetadata(itemMeta);
+                
+                }   
+                bibtex += '\n---\n\n';
+                bibtex += factory.makeBibliography(keys);
+
+                let bibtexFile = this.settings.bibPath.trim();
+                bibtexFile = bibtexFile.replace(/\.json$/i, '-bib.md');
+                const fileName: string = normalizePath(`${bibtexFile}`);
+                const newFile = <TFile> vault.getAbstractFileByPath(fileName);
+                if (newFile !== null)
+                    await vault.modify(newFile, bibtex);
+                else
+                    await vault.create(fileName, bibtex);
 
             }
         });
@@ -42,10 +75,6 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 const { vault } = this.app;
 
-                if (this.settings.bibPath.trim() !== '') {
-                    this.metadata = await new BibtexParser().parse(this.app, this.settings);
-                }
-                
                 new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, this.metadata);
 
             }
@@ -76,7 +105,7 @@ export default class TopicLinkingPlugin extends Plugin {
         });
 
         // This adds a settings tab so the user can configure various aspects of the plugin
-        this.addSettingTab(new TopicLinkingSettingTab(this.app, this));
+        this.addSettingTab(new TopicLinkingSettingTab(this.app, this, styles));
 
 	}
 

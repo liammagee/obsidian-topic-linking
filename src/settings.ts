@@ -18,7 +18,11 @@ export interface TopicLinkingSettings {
     pdfExtractAnnotations: boolean;
     pdfExtractAnnotationsIncludeComments: boolean;
     pdfExtractAnnotationsIncludeCommentsAsCallouts: boolean;
+
     bibPath: string;
+    citeprocStyleId: string;
+    citeprocLang: string;
+    citeprocForceLang: boolean;
 
     bookmarkPath: string;
     bookmarkOverwrite: boolean;
@@ -38,8 +42,8 @@ export interface TopicLinkingSettings {
     ldaIterations: number;
     ldaBurnIn: number;
     ldaThin: number;
-    includeTags: boolean;
 
+    includeTags: boolean;
     
 }
 
@@ -55,7 +59,11 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfExtractAnnotations: true,
     pdfExtractAnnotationsIncludeComments: true,
     pdfExtractAnnotationsIncludeCommentsAsCallouts: true,
+
     bibPath: '',
+    citeprocStyleId: 'apa',
+    citeprocLang: 'en-US',
+    citeprocForceLang: false,
 
     bookmarkPath: 'Bookmarks/',
     bookmarkOverwrite: false,
@@ -78,14 +86,17 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
 
     includeTags: false,
 
+
 }
 
 export class TopicLinkingSettingTab extends PluginSettingTab {
     plugin: TopicLinkingPlugin;
+    styles: Record<string, string>;
 
-    constructor(app: App, plugin: TopicLinkingPlugin) {
+    constructor(app: App, plugin: TopicLinkingPlugin, styles: Record<string, string>) {
         super(app, plugin);
         this.plugin = plugin;
+        this.styles = styles;
     }
 
     display(): void {
@@ -204,7 +215,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
             });
         new Setting(containerEl)
             .setName("Bibtex File")
-            .setDesc("Add Path to the *BetterBibTex JSON* file to be imported. A valid path should")
+            .setDesc("Add Path to the *BetterBibTex JSON* file to be imported. ")
             .addText((text) =>
                 text
                     .setPlaceholder("")
@@ -214,6 +225,41 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     })
             );
+        new Setting(containerEl)
+            .setName("Citation Style")
+            .setDesc("Citation Style")
+            .addDropdown((dropdown) => 
+                dropdown
+                    .addOptions(this.styles)
+                    .setValue(this.plugin.settings.citeprocStyleId.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.citeprocStyleId = value;
+                        await this.plugin.saveSettings();
+                    })                    
+            );
+        new Setting(containerEl)
+            .setName("Citation Location")
+            .setDesc("Citation Location")
+            .addText((text) =>
+                text
+                    .setPlaceholder("en-US")
+                    .setValue(this.plugin.settings.citeprocLang.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.citeprocLang = value;
+                        await this.plugin.saveSettings();
+                    })
+            );
+        new Setting(containerEl)
+            .setName("Citation - Force Language")
+            .setDesc("Citation - Force Language")
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.citeprocForceLang)
+                    .onChange(async (value) => {
+                        this.plugin.settings.citeprocForceLang = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
 
         containerEl.createEl('h3', { text: 'Bookmark Extraction Settings' });
         new Setting(containerEl)

@@ -5,7 +5,7 @@ import {
     loadPdfJs } from 'obsidian';
 import { stringify } from 'querystring';
 import { TopicLinkingSettings } from './settings';
-const CSL = require('citeproc-plus'); 
+import { formatBibtexAsMetadata } from './utils';
 
 
 export class PDFContentExtractor {
@@ -407,11 +407,11 @@ export class PDFContentExtractor {
         // console.log(file.basename, this.metadata[file.basename])
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
             const itemMeta = this.metadata[file.basename];
-            // console.log(itemMeta);
-            metadataContents += `\nCitationKey: ${itemMeta.citationKey}`;
-            metadataContents += `\nTitle: "${itemMeta.title}"`;
-            metadataContents += `\nAuthors: "${itemMeta.creators.map((author:any) => author.lastName + ', ' + author.firstName).join('; ')}"`;
-            metadataContents += `\nAbstract: "${itemMeta.abstractNote}"`;
+            metadataContents += formatBibtexAsMetadata(itemMeta);
+            // metadataContents += `\nCitationKey: ${itemMeta.citationKey}`;
+            // metadataContents += `\nTitle: "${itemMeta.title}"`;
+            // metadataContents += `\nAuthors: "${itemMeta.creators.map((author:any) => author.lastName + ', ' + author.firstName).join('; ')}"`;
+            // metadataContents += `\nAbstract: "${itemMeta.abstractNote}"`;
             metadataContents += `\n---`;
             metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
          

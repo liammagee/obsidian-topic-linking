@@ -1,4 +1,5 @@
-const CSL = require('citeproc-js'); 
+const CSL = require('citeproc'); 
+import { TopicLinkingSettings } from './settings';
 
 // Mostly taken from citeproc-plus
 export function inflateCSLObj(slimObj:any) {
@@ -29,9 +30,9 @@ export function inflateCSLObj(slimObj:any) {
 }
 
 
-class CSLWrapper {
+class CiteprocWrapper {
 
-    styles : any = {}
+    styles : any = {};
     locales : any = {};
     citeproc : any = {};
 
@@ -42,8 +43,8 @@ class CSLWrapper {
     }
 
     getStyles() {
-        return require("../build/styles").then(
-            (styles:any) => styles
+        return import("../build/styles").then(
+            (styles:any) => styles.styles
         )
     }
 
@@ -84,7 +85,7 @@ class CSLWrapper {
         if (this.citeproc) {
             return Promise.resolve()
         }
-        return import("citeproc-js").then(
+        return import("citeproc").then(
             (citeprocModule:any) => {
                 this.citeproc = citeprocModule.default
             }
@@ -149,10 +150,15 @@ class CSLWrapper {
 
 
 
-export class CSLGenerator {
+export class CiteprocFactory {
 
-    async generate(metadata: Record<string, any>) {
+    wrapper : any = {};
+    engine : any = {};
 
+    async initEngine(metadata: Record<string, any>, settings: TopicLinkingSettings) {
+
+        const {citeprocStyleId, citeprocLang, citeprocForceLang} = settings;
+        
         let sys: any = {
         
             retrieveItem: function(id: string) {
@@ -165,29 +171,19 @@ export class CSLGenerator {
             }
         };
 
-        let styleId:string = 'apa';
-        // let styleId:string = 'chicago-fullnote-bibliography';
-        
-        let lang:string = 'en-US';
-        let forceLang:boolean = true;
-
-        const csl = new CSLWrapper()
-        const citeproc = await csl.getEngine(
+        this.wrapper = new CiteprocWrapper();
+        this.engine = await this.wrapper.getEngine(
             sys, // required, same as for citeproc-js, but without the retrieveLocale method
-            styleId, // required, The id of the style to use
-            lang, // optional, same as for citeproc-js
-            forceLang // optional, same as for citeproc-js
+            citeprocStyleId, // required, The id of the style to use
+            citeprocLang, // optional, same as for citeproc-js
+            citeprocForceLang // optional, same as for citeproc-js
         )
+    }
 
-        console.log(citeproc.disambiguate.state);
-        console.log(citeproc.disambiguate.state.registry);
-        console.log(citeproc.disambiguate.state.registry.registry);
-        console.log(citeproc.disambiguate.state.registry.registry['noschHauteCoutureBronze']);
+    makeBibliography(itemIds: string[]) {
 
-        citeproc.updateItems(['noschHauteCoutureBronze']);
-
-        let bib = citeproc.makeBibliography();
-        console.log(bib[1].join(''));
+        this.engine.updateItems(itemIds);
+        return this.engine.makeBibliography()[1].join('');
         
     }
 

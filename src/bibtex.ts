@@ -15,6 +15,7 @@ export class BibtexParser {
         const keyedItems = data.items.reduce((acc:any,item:any) => (acc[item.citationKey]=item,acc),{});
 
         return keyedItems;
+        
     }
 
 }
