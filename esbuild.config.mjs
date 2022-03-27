@@ -17,6 +17,7 @@ esbuild.build({
 	},
 	entryPoints: ['src/main.ts'],
 	bundle: true,
+	loader: {'.csljson': 'json'},
 	external: ['obsidian', 'electron', ...builtins],
 	format: 'cjs',
 	watch: !prod,

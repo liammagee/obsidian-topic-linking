@@ -1,14 +1,7 @@
 import { 
     App, 
-    TFile,
-    prepareSimpleSearch,
-    getAllTags, 
-    normalizePath,
-	moment } from 'obsidian';
-import { stringify } from 'querystring';
-
+    TFile } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
-
 
 
 export class BibtexParser {

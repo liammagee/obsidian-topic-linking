@@ -6,6 +6,7 @@ import { PDFContentExtractor } from './pdf';
 import { BookmarkContentExtractor } from './bookmark';
 import { TopicLinker } from './topic';
 import { BibtexParser } from './bibtex';
+import { CSLGenerator } from './csl';
 
 export default class TopicLinkingPlugin extends Plugin {
     settings: TopicLinkingSettings;
@@ -16,6 +17,21 @@ export default class TopicLinkingPlugin extends Plugin {
 
         // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
         const statusBarItemEl = this.addStatusBarItem();
+
+        // This command generates citeproc content
+        this.addCommand({
+            id: 'citeproc',
+            name: 'Citeproc',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
+            callback: async () => {
+
+                if (this.settings.bibPath.trim() !== '') {
+                    this.metadata = await new BibtexParser().parse(this.app, this.settings);
+                    new CSLGenerator().generate(this.metadata);
+                }
+
+            }
+        });
 
         // This command extracts PDFs to Markdown
         this.addCommand({

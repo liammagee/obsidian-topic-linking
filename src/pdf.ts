@@ -5,6 +5,7 @@ import {
     loadPdfJs } from 'obsidian';
 import { stringify } from 'querystring';
 import { TopicLinkingSettings } from './settings';
+const CSL = require('citeproc-plus'); 
 
 
 export class PDFContentExtractor {
