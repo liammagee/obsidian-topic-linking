@@ -12,10 +12,13 @@ export class BibtexParser {
         const bibFile = <TFile>app.vault.getAbstractFileByPath(bibPath);
         const buffer = await app.vault.read(bibFile);
 		const data = JSON.parse(buffer.toString()); 
-        const keyedItems = data.items.reduce((acc:any,item:any) => (acc[item.citationKey]=item,acc),{});
+        // BibTex CSL JSON format
+        const metadata = data.reduce((acc:any,item:any) => (acc[item.id]=item,acc),{});
+        // BibTex Bibtex JSON format
+        // const metadata = data.items.reduce((acc:any,item:any) => (acc[item.citationKey]=item,acc),{});
 
-        return keyedItems;
-        
+        return metadata;
+
     }
 
 }

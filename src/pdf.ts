@@ -5,6 +5,7 @@ import {
     loadPdfJs } from 'obsidian';
 import { stringify } from 'querystring';
 import { TopicLinkingSettings } from './settings';
+import { CiteprocFactory } from './citeproc';
 import { formatBibtexAsMetadata } from './utils';
 
 
@@ -13,6 +14,7 @@ export class PDFContentExtractor {
     generatedPath: string;
     pdfPath: string;
     metadata: Record<string,any>;
+    citeproc: CiteprocFactory;
 
 
     /**
@@ -402,31 +404,29 @@ export class PDFContentExtractor {
         }
 
         let markdownContents = markdownStrings.join('');
-        let metadataContents = `---`;
-        metadataContents += `\nSource: [[${file.path}]]`;
-        // console.log(file.basename, this.metadata[file.basename])
+        let metadataContents = ``;
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
             const itemMeta = this.metadata[file.basename];
+            metadataContents += `---`;
             metadataContents += formatBibtexAsMetadata(itemMeta);
-            // metadataContents += `\nCitationKey: ${itemMeta.citationKey}`;
-            // metadataContents += `\nTitle: "${itemMeta.title}"`;
-            // metadataContents += `\nAuthors: "${itemMeta.creators.map((author:any) => author.lastName + ', ' + author.firstName).join('; ')}"`;
-            // metadataContents += `\nAbstract: "${itemMeta.abstractNote}"`;
             metadataContents += `\n---`;
+            const bib : string = this.citeproc.makeBibliography([itemMeta.id]);
+            metadataContents += `\n${bib}`;
             metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
-         
         }
-        else {
-            metadataContents += `\n---`;
+        metadataContents += `\nSource: [[${file.path}]]`;
+        if (annotationMetadata.length > 0) {
+            metadataContents += `\n\n### Annotations\n`;
+            for (let annotation of annotationMetadata) {
+                metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
+                if (annotation.commentText !== '')
+                    metadataContents += `**${annotation.commentText}**`;
+            }
+            
         }
-        metadataContents += `\n\n### Annotations\n`;
-        for (let annotation of annotationMetadata) {
-            metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
-            if (annotation.commentText !== '')
-                metadataContents += `**${annotation.commentText}**`;
-        }
+        metadataContents += `\n\n`;
 
-        markdownContents = `${metadataContents}\n\n${markdownContents}`;
+        markdownContents = `${metadataContents}${markdownContents}`;
 
         // Add any footnotes 
         for (let footnoteID in footnotes) {
@@ -615,11 +615,13 @@ export class PDFContentExtractor {
         return { leadingSpace, trailingSpace, str };
     }
 
-    async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement, metadata: Record<string, any>) {
+    async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement, metadata: Record<string, any>, citeproc: CiteprocFactory) {
         
         // Load PdfJs
 		this.pdfjs = await loadPdfJs();
-        
+    
+        this.citeproc = citeproc;
+
         statusBarItemEl.setText(`Extracting Markdown text from PDF files...`);
 
         this.generatedPath = settings.generatedPath;

@@ -37,7 +37,6 @@
 		"@stdlib/string-lowercase": "^0.0.7",
 		"@stdlib/types": "^0.0.13",
 		"citeproc": "^2.4.62",
-		"citeproc-plus": "^0.2.7",
 		"micromatch": "^4.0.4",
 		"pdfjs": "^2.4.7",
 		"sanitize-filename": "^1.6.3",

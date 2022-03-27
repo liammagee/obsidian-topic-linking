@@ -45,23 +45,31 @@ export default class TopicLinkingPlugin extends Plugin {
                 const { vault } = this.app;
 
                 const keys = Object.keys(metadata);
-                let bibtex = '---';
+                let bibliography = '# Bibliography\n\n';
                 for (let key in metadata) {
                     let itemMeta = metadata[key];
+                    let bibtex = '---';
                     bibtex += formatBibtexAsMetadata(itemMeta);
-                
-                }   
-                bibtex += '\n---\n\n';
-                bibtex += factory.makeBibliography(keys);
+                    bibtex += '\n---\n';
+                    const bib : string = factory.makeBibliography([key]);
+                    bibtex += bib;
 
-                let bibtexFile = this.settings.bibPath.trim();
-                bibtexFile = bibtexFile.replace(/\.json$/i, '-bib.md');
-                const fileName: string = normalizePath(`${bibtexFile}`);
-                const newFile = <TFile> vault.getAbstractFileByPath(fileName);
-                if (newFile !== null)
-                    await vault.modify(newFile, bibtex);
+                    bibliography += `[[${key}]]\n`;
+                    bibliography += `${bib}\n\n`;
+                    const fileName: string = normalizePath(`Bibliography/${key}.md`);
+                    const newFile = <TFile> vault.getAbstractFileByPath(fileName);
+                    if (newFile !== null)
+                        await vault.modify(newFile, bibtex);
+                    else
+                        await vault.create(fileName, bibtex);
+                }   
+
+                const bibFileName: string = normalizePath(`Bibliography/bibliography.md`);
+                const bibFile = <TFile> vault.getAbstractFileByPath(bibFileName);
+                if (bibFile !== null)
+                    await vault.modify(bibFile, bibliography);
                 else
-                    await vault.create(fileName, bibtex);
+                    await vault.create(bibFileName, bibliography);
 
             }
         });
@@ -75,7 +83,7 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 const { vault } = this.app;
 
-                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, this.metadata);
+                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadata, factory);
 
             }
         });
