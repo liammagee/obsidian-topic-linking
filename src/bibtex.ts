@@ -34,6 +34,7 @@ export class BibtexParser {
             // Create item type
             let itemType = 'article-journal';
             if (item.type === 'book') itemType = 'book';
+            let authors : {family: string, given: string}[] = [];
             let cslItem = {
                 id: id,
                 'citation-key': item.citationKey,
@@ -48,17 +49,15 @@ export class BibtexParser {
                 page: item.pages,
                 language: item.language,
                 source: item.libraryCatalog,
-                type: itemType
+                type: itemType,
+                author: authors
             }
             item.creators.forEach((creator:any) => {
                 if (creator.creatorType === 'author') {
-                    if (!cslItem.author) 
-                        cslItem.author = [];
-                    let author = {
+                    cslItem.author.push({
                         family: creator.lastName,
                         given: creator.firstName
-                    };
-                    cslItem.author.push(author);
+                    });
                 }
             });
             cslJSON[id] = cslItem;
@@ -76,9 +75,9 @@ export class BibtexParser {
 
 }
 
-export function formatBibtexAsMetadata(item) {
+export function formatBibtexAsMetadata(item:any) {
     let metadataContents = '';
-    metadataContents += `\nID: ${item.id}`;
+    metadataContents += `\nID: ${item.citationKey}`;
     metadataContents += `\nTitle: "${item.title}"`;
     // BibTex CSL JSON format
     metadataContents += `\nAuthors: "${item.creators.map((creator:any) => creator.lastName + ', ' + creator.firstName).join('; ')}"`;

@@ -13,8 +13,6 @@ import { CiteprocFactory } from './citeproc';
 
 export default class TopicLinkingPlugin extends Plugin {
     settings: TopicLinkingSettings;
-    // metadata: Record<string, any>;
-    citeproc: CSLGenerator;
 
     async onload() {
         await this.loadSettings();
@@ -22,21 +20,16 @@ export default class TopicLinkingPlugin extends Plugin {
         // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
         const statusBarItemEl = this.addStatusBarItem();
 
-        let metadataBibtex = {}, metadataCSL = {}, metadataCSL2 = {};
+        let metadataBibtex : any = {}, metadataCSL = {};
         let bibtexParser = new BibtexParser();
         if (this.settings.bibtexPath.trim() !== '') {
             metadataBibtex = await bibtexParser.parseBibtexJSON(this.app, this.settings);
             metadataCSL = bibtexParser.convertToCSLJSON(metadataBibtex);
         }
-        // this.settings.cslPath = 'TopicLinking_csl.json';
-        // if (this.settings.cslPath.trim() !== '') {
-        //     metadataCSL2 = bibtexParser.parseCSLJSON(this.app, this.settings);
-        //     console.log(metadataCSL2);
-        // }
-        // let factory = new CiteprocFactory();
-        // await factory.initEngine(metadataCSL, this.settings);
-        // let styles = await factory.wrapper.getStyles();
-        let styles = {}
+        let factory = new CiteprocFactory();
+        await factory.initEngine(metadataCSL, this.settings);
+        let styles = await factory.wrapper.getStyles();
+        console.log(styles)
 
         // This command extracts PDFs to Markdown
         this.addCommand({

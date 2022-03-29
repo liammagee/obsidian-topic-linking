@@ -80,11 +80,44 @@ export class PDFContentExtractor {
             for (let i = 0; i < pdf.numPages; i++) {
                 const page = await pdf.getPage(i + 1);
                 const textContent = await page.getTextContent();
-                const operators = await page.getOperatorList();
+                const opList = await page.getOperatorList();
                 const annotations = await page.getAnnotations();
-                const objs = page.commonObjs._objs;
+                const commonObjs = page.commonObjs._objs;
+                const objs = page.objs;
+                /*
+                console.log(opList)
+                if (i == 2) {
+                    for (let j = 0; j < opList.fnArray.length; j++) {
+                        if (opList.fnArray[j] === this.pdfjs.OPS.paintImageXObject) {
+                            function getImage() {
+                                return new Promise(async function (res, rej) {
+                                    let img = null
+                                    try {
+           //-------either get data from page.objs.get
+                                        img = page.objs.get(opList.argsArray[j][0])
+        
+                                    } catch (err) {
+                                        if (opList.argsArray[j][0].startsWith("g_")) {
+           //---------or get data from page.commonObjs.get
+                                            img = page.commonObjs.get(opList.argsArray[j][0])
+                                        } else {
+                                        }
+                                    }
+                                    console.log(img)
+
+                                })
+                            }
+                            await getImage()                            
+                            // let img : any = await objs.get(operators.fnArray[j][0])
+                        }
+                    }
+                    
+                    // console.log(page.commonObjs)
+
+                }
+                */
     
-                pages.push( { textContent: textContent, opList: operators, commonObjs: objs, annotations: annotations } );
+                pages.push( { textContent: textContent, opList: opList, commonObjs: commonObjs, annotations: annotations } );
                 // Release page resources.
                 page.cleanup();
             }
@@ -294,21 +327,20 @@ export class PDFContentExtractor {
             const opList = page.opList;
             const annotations = page.annotations;
 
-            if (j == 2) {
-                console.log(textContent);
-                console.log(commonObjs);
-                console.log(opList);
-                for (var i=0; i < opList.fnArray.length; i++) {
-                    if (opList.fnArray[i] == this.pdfjs.OPS.paintJpegXObject) {
-                        let op = opList.argsArray[i][0];
-                        // console.log(opList.argsArray[i][0])
-                    }
-                    else if (opList.fnArray[i] == this.pdfjs.OPS.setFillRGBColor) {
-                        let op = await opList.buffer;
-                        console.log("setFillRGBColor", op)
-                    }
-                }
-            }
+            // if (j == 2) {
+            //     console.log(textContent);
+            //     console.log(commonObjs);
+            //     console.log(opList);
+            //     for (var i=0; i < opList.fnArray.length; i++) {
+            //         if (opList.fnArray[i] == this.pdfjs.OPS.paintJpegXObject) {
+            //             let op = opList.argsArray[i][0];
+            //             // console.log(opList.argsArray[i][0])
+            //         }
+            //         else if (opList.fnArray[i] == this.pdfjs.OPS.setFillRGBColor) {
+            //             let op = opList.argsArray[i];
+            //         }
+            //     }
+            // }
 
             let inCode = false;
             let newLine = true;
