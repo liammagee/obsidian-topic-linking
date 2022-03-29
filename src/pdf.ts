@@ -3,10 +3,9 @@ import {
     TFile, 
     normalizePath,
     loadPdfJs } from 'obsidian';
-import { stringify } from 'querystring';
 import { TopicLinkingSettings } from './settings';
 import { CiteprocFactory } from './citeproc';
-import { formatBibtexAsMetadata } from './utils';
+import { formatBibtexAsMetadata } from './bibtex';
 
 
 export class PDFContentExtractor {
@@ -85,7 +84,9 @@ export class PDFContentExtractor {
                 const annotations = await page.getAnnotations();
                 const objs = page.commonObjs._objs;
     
-                pages.push( { textContent: textContent, commonObjs: objs, annotations: annotations } );
+                pages.push( { textContent: textContent, opList: operators, commonObjs: objs, annotations: annotations } );
+                // Release page resources.
+                page.cleanup();
             }
         }
         catch (err) {
@@ -290,7 +291,24 @@ export class PDFContentExtractor {
             const page = pages[j];
             const textContent = page.textContent;
             const commonObjs = page.commonObjs;
+            const opList = page.opList;
             const annotations = page.annotations;
+
+            if (j == 2) {
+                console.log(textContent);
+                console.log(commonObjs);
+                console.log(opList);
+                for (var i=0; i < opList.fnArray.length; i++) {
+                    if (opList.fnArray[i] == this.pdfjs.OPS.paintJpegXObject) {
+                        let op = opList.argsArray[i][0];
+                        // console.log(opList.argsArray[i][0])
+                    }
+                    else if (opList.fnArray[i] == this.pdfjs.OPS.setFillRGBColor) {
+                        let op = await opList.buffer;
+                        console.log("setFillRGBColor", op)
+                    }
+                }
+            }
 
             let inCode = false;
             let newLine = true;
@@ -410,7 +428,7 @@ export class PDFContentExtractor {
             metadataContents += `---`;
             metadataContents += formatBibtexAsMetadata(itemMeta);
             metadataContents += `\n---`;
-            const bib : string = this.citeproc.makeBibliography([itemMeta.id]);
+            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
             metadataContents += `\n${bib}`;
             metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
         }

@@ -19,7 +19,7 @@ export interface TopicLinkingSettings {
     pdfExtractAnnotationsIncludeComments: boolean;
     pdfExtractAnnotationsIncludeCommentsAsCallouts: boolean;
 
-    bibPath: string;
+    bibtexPath: string;
     citeprocStyleId: string;
     citeprocLang: string;
     citeprocForceLang: boolean;
@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfExtractAnnotationsIncludeComments: true,
     pdfExtractAnnotationsIncludeCommentsAsCallouts: true,
 
-    bibPath: '',
+    bibtexPath: '',
     citeprocStyleId: 'apa',
     citeprocLang: 'en-US',
     citeprocForceLang: false,
@@ -214,17 +214,18 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                     });
             });
         new Setting(containerEl)
-            .setName("Bibtex File")
+            .setName("Better Bibtex File")
             .setDesc("Add Path to the *BetterBibTex JSON* file to be imported. ")
             .addText((text) =>
                 text
                     .setPlaceholder("")
-                    .setValue(this.plugin.settings.bibPath.toString())
+                    .setValue(this.plugin.settings.bibtexPath.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.bibPath = value;
+                        this.plugin.settings.bibtexPath = value;
                         await this.plugin.saveSettings();
                     })
             );
+
         new Setting(containerEl)
             .setName("Citation Style")
             .setDesc("Citation Style")

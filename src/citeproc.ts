@@ -1,6 +1,7 @@
 const CSL = require('citeproc'); 
 import { TopicLinkingSettings } from './settings';
 
+
 // Mostly taken from citeproc-plus
 export function inflateCSLObj(slimObj:any) {
     if (slimObj.name) {
@@ -43,9 +44,10 @@ class CiteprocWrapper {
     }
 
     getStyles() {
-        return import("../build/styles").then(
-            (styles:any) => styles.styles
-        )
+        return {}
+        // return import("../build/styles-common").then(
+        //     (styles:any) => styles.styles
+        // )
     }
 
     async getEngine(originalSys:any, styleId:any, lang:string, forceLang:boolean) {
@@ -103,23 +105,31 @@ class CiteprocWrapper {
             return Promise.resolve(styleId)
         }
 
-        return import("../build/styles").then(
+        return import("../build/styles-common").then(
             (module:any) => {
                 let styleLocations:any = module.styleLocations;
 
-                if (!styleLocations[styleId]) {
+                if (!styleLocations[styleId]) 
                     styleId = Object.keys(styleLocations).find(() => true)
-                }
-                let returnValue
+
+                let returnValue;
                 if (this.styles[styleLocations[styleId]]) {
                     this.styles[styleLocations[styleId]][styleId] = inflateCSLObj(this.styles[styleLocations[styleId]][styleId])
                     returnValue = Promise.resolve(this.styles[styleLocations[styleId]][styleId])
                 } else {
                     this.styles[styleLocations[styleId]] = styleLocations[styleId]
                     this.styles[styleLocations[styleId]][styleId] = inflateCSLObj(this.styles[styleLocations[styleId]][styleId])
-                    return Promise.resolve(this.styles[styleLocations[styleId]][styleId])
+
+                    returnValue = Promise.resolve(this.styles[styleLocations[styleId]][styleId])
                 }
                 return returnValue
+    
+                //     console.log("Loading style: ", styleLocations, styleId, styleLocations[styleId], styleLocations[styleId][styleId])
+                // if (!this.styles[styleLocations[styleId]]) 
+                //     this.styles[styleLocations[styleId]] = styleLocations[styleId]
+
+                // this.styles[styleLocations[styleId]][styleId] = inflateCSLObj(this.styles[styleLocations[styleId]][styleId])
+                // return Promise.resolve(this.styles[styleLocations[styleId]][styleId]);
             }
         )
     }

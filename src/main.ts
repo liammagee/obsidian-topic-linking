@@ -7,13 +7,13 @@ import { TopicLinkingSettings, TopicLinkingSettingTab, DEFAULT_SETTINGS } from '
 import { PDFContentExtractor } from './pdf';
 import { BookmarkContentExtractor } from './bookmark';
 import { TopicLinker } from './topic';
-import { BibtexParser } from './bibtex';
+import { BibtexParser, formatBibtexAsMetadata } from './bibtex';
 import { CiteprocFactory } from './citeproc';
-import { formatBibtexAsMetadata } from './utils';
+
 
 export default class TopicLinkingPlugin extends Plugin {
     settings: TopicLinkingSettings;
-    metadata: Record<string, any>;
+    // metadata: Record<string, any>;
     citeproc: CSLGenerator;
 
     async onload() {
@@ -22,37 +22,60 @@ export default class TopicLinkingPlugin extends Plugin {
         // This adds a status bar item to the bottom of the app. Does not work on mobile apps.
         const statusBarItemEl = this.addStatusBarItem();
 
-        let metadata = {};
-        if (this.settings.bibPath.trim() !== '') {
-            metadata = await new BibtexParser().parse(this.app, this.settings);
+        let metadataBibtex = {}, metadataCSL = {}, metadataCSL2 = {};
+        let bibtexParser = new BibtexParser();
+        if (this.settings.bibtexPath.trim() !== '') {
+            metadataBibtex = await bibtexParser.parseBibtexJSON(this.app, this.settings);
+            metadataCSL = bibtexParser.convertToCSLJSON(metadataBibtex);
         }
-        let factory = new CiteprocFactory();
-        await factory.initEngine(metadata, this.settings);
-        let styles = await factory.wrapper.getStyles();
+        // this.settings.cslPath = 'TopicLinking_csl.json';
+        // if (this.settings.cslPath.trim() !== '') {
+        //     metadataCSL2 = bibtexParser.parseCSLJSON(this.app, this.settings);
+        //     console.log(metadataCSL2);
+        // }
+        // let factory = new CiteprocFactory();
+        // await factory.initEngine(metadataCSL, this.settings);
+        // let styles = await factory.wrapper.getStyles();
+        let styles = {}
+
+        // This command extracts PDFs to Markdown
+        this.addCommand({
+            id: 'extract-md-from-pdfs-command',
+            name: 'Extract Markdown from PDFs',
+            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
+            callback: async () => {
+
+                const { vault } = this.app;
+
+                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadataBibtex, factory);
+
+            }
+        });
 
         // This command generates citeproc content
         this.addCommand({
             id: 'make-bibliography',
             name: 'Make Bibliography',
-            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
             callback: async () => {
 
-                if (this.settings.bibPath.trim() === '') {
+                if (this.settings.bibtexPath.trim() === '') {
                     console.log('Must specific bibliography path');
                     return;
                 }
 
                 const { vault } = this.app;
 
-                const keys = Object.keys(metadata);
+                const keys = Object.keys(metadataBibtex);
                 let bibliography = '# Bibliography\n\n';
-                for (let key in metadata) {
-                    let itemMeta = metadata[key];
+                for (let key in metadataBibtex) {
+                    let itemMetaBibtex = metadataBibtex[key];
+                    let itemMetaCSL = metadataBibtex[key];
                     let bibtex = '---';
-                    bibtex += formatBibtexAsMetadata(itemMeta);
+                    bibtex += formatBibtexAsMetadata(itemMetaBibtex);
                     bibtex += '\n---\n';
                     const bib : string = factory.makeBibliography([key]);
                     bibtex += bib;
+                    bibtex += `\n[Open in Zotero](${itemMetaBibtex.select})`;
 
                     bibliography += `[[${key}]]\n`;
                     bibliography += `${bib}\n\n`;
@@ -83,7 +106,7 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 const { vault } = this.app;
 
-                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadata, factory);
+                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadataBibtex, factory);
 
             }
         });
@@ -128,4 +151,5 @@ export default class TopicLinkingPlugin extends Plugin {
         await this.saveData(this.settings);
     }
 }
+
 
