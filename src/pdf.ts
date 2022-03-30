@@ -448,8 +448,6 @@ export class PDFContentExtractor {
 
                 // Handle any highlighting
                 ({ str, highlightAccumulate, highlightAccumulator } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, comment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
-                if (highlightAccumulate)
-                    console.log(str);
                         
                 let yDiff = 0;
                 let yDiff2 = 0;
