@@ -6,7 +6,15 @@ import {
 import { TopicLinkingSettings } from './settings';
 import { CiteprocFactory } from './citeproc';
 import { formatBibtexAsMetadata } from './bibtex';
+import { encode } from 'fast-png';
+import datasets from '@stdlib/datasets/docs/types';
 
+// From pdf.js src/shared/utils.js
+const ImageKind = {
+    GRAYSCALE_1BPP: 1,
+    RGB_24BPP: 2,
+    RGBA_32BPP: 3
+  };
 
 export class PDFContentExtractor {
     pdfjs: any;
@@ -66,78 +74,18 @@ export class PDFContentExtractor {
         return chunks;
     }
 
-    /**
-     * Extracts text from a PDF file.
-     */
-     getContent = async (vault: Vault, file : TFile, counter : number) => {
-
-        const pages : any[] = [];
-        try {
-
-            const buffer = await vault.readBinary(file);
-            const pdf = await this.pdfjs.getDocument(buffer).promise;
-            console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
-            for (let i = 0; i < pdf.numPages; i++) {
-                const page = await pdf.getPage(i + 1);
-                const textContent = await page.getTextContent();
-                const opList = await page.getOperatorList();
-                const annotations = await page.getAnnotations();
-                const commonObjs = page.commonObjs._objs;
-                const objs = page.objs;
-                /*
-                console.log(opList)
-                if (i == 2) {
-                    for (let j = 0; j < opList.fnArray.length; j++) {
-                        if (opList.fnArray[j] === this.pdfjs.OPS.paintImageXObject) {
-                            function getImage() {
-                                return new Promise(async function (res, rej) {
-                                    let img = null
-                                    try {
-           //-------either get data from page.objs.get
-                                        img = page.objs.get(opList.argsArray[j][0])
-        
-                                    } catch (err) {
-                                        if (opList.argsArray[j][0].startsWith("g_")) {
-           //---------or get data from page.commonObjs.get
-                                            img = page.commonObjs.get(opList.argsArray[j][0])
-                                        } else {
-                                        }
-                                    }
-                                    console.log(img)
-
-                                })
-                            }
-                            await getImage()                            
-                            // let img : any = await objs.get(operators.fnArray[j][0])
-                        }
-                    }
-                    
-                    // console.log(page.commonObjs)
-
-                }
-                */
-    
-                pages.push( { textContent: textContent, opList: opList, commonObjs: commonObjs, annotations: annotations } );
-                // Release page resources.
-                page.cleanup();
-            }
-        }
-        catch (err) {
-            console.log(`Error ${err} loading ${file.path}.`)
-        }
-        return pages;
-    }
 
     /**
      * Calculate mean text height across all pages. Used to determine if a given text block is a heading (if its text height is 
      * well above the mean).
      * @param pages of the PDF file
      */
-    calculateMeanTextHeight = (pages: Array<any>) => {
-        
+    // calculateMeanTextHeight = (pages: Array<any>) => {
+    calculateMeanTextHeight = async (pdf: any) => {
         let minH = -1, maxH = -1, totalH = 0, counterH = 0;
-        pages.forEach( (page) => {
-            const textContent = page.textContent;
+        for (let j = 0; j < pdf.numPages; j++) {
+            const page = await pdf.getPage(j + 1);
+            const textContent = await page.getTextContent();
             textContent.items.forEach((item:any) => {
                 const { str, height } = item;
                 if (str.trim().length > 0) {
@@ -149,7 +97,11 @@ export class PDFContentExtractor {
                     counterH++;
                 }
             });
-        });
+
+            // Release page resources.
+            page.cleanup();
+
+        }
 
         return totalH / counterH;
     };
@@ -293,6 +245,66 @@ export class PDFContentExtractor {
         return { str, highlightedText, footnoteCounter };
     }
 
+
+    /**
+     * Extracts text from a PDF file.
+     */
+     getContent = async (vault: Vault, file : TFile, counter : number) => {
+
+        const pages : any[] = [];
+        try {
+
+            const buffer = await vault.readBinary(file);
+            const pdf = await this.pdfjs.getDocument(buffer).promise;
+            console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
+            for (let i = 0; i < pdf.numPages; i++) {
+                const page = await pdf.getPage(i + 1);
+                const textContent = await page.getTextContent();
+                const opList = await page.getOperatorList();
+                const annotations = await page.getAnnotations();
+                const commonObjs = page.commonObjs._objs;
+                const objs = page.objs;
+
+                for (let j = 0; j < opList.fnArray.length; j++) {
+                    if (opList.fnArray[j] === this.pdfjs.OPS.paintImageXObject) {
+                        let img : any = page.objs.get(opList.argsArray[j][0])
+                        // Convert and save image to a PNG
+                        if (img.kind === ImageKind.RGB_24BPP) { 
+                            const imgSize : number = img.data.length;
+                            const imgSizeNew = imgSize / 3 * 4;
+                            let imgDataNew : number[] = new Array<number>(imgSizeNew);
+                            for (let k = 0, l = 0; k < imgSize; k++, l++) {
+                                imgDataNew[l] = img.data[k];
+                                if (k % 3 == 2) {
+                                    imgDataNew[(l++)+1] = 255;
+                                }
+                            }
+                            const buffer = Buffer.from(imgDataNew);
+                            const pngInput = { data: buffer, width: img.width, height: img.height };
+                            const png = await encode(pngInput);
+                            let bn = '';
+                            if (file !== null)
+                                bn = file.basename;
+                            const imagePath = normalizePath(`${this.generatedPath}${bn}_${i+1}_${j+1}.png`);
+                            const imageFile = <TFile> vault.getAbstractFileByPath(imagePath);
+                            if (imageFile != null) 
+                                await vault.delete(imageFile);
+                            await vault.createBinary(imagePath, png);
+                        }
+                    }
+                }
+    
+                pages.push( { textContent: textContent, opList: opList, commonObjs: commonObjs, annotations: annotations } );
+                // Release page resources.
+                page.cleanup();
+            }
+        }
+        catch (err) {
+            console.log(`Error ${err} loading ${file.path}.`)
+        }
+        return pages;
+    }
+
     /**
      * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
      * @param file 
@@ -300,18 +312,21 @@ export class PDFContentExtractor {
      */
     processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
 
-        const pages: Array<any> = await this.getContent(vault, file, fileCounter);
+        // const pages: Array<any> = await this.getContent(vault, file, fileCounter);
+        const buffer = await vault.readBinary(file);
+        const pdf = await this.pdfjs.getDocument(buffer).promise;
+        console.log(`Loading file num ${fileCounter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
+
         const subPath = this.subPathFactory(file, this.pdfPath.length);
+        const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
+        let newFile = <TFile> vault.getAbstractFileByPath(fileName);
+        if (newFile !== null)
+            await vault.modify(newFile, '');
+        else 
+            newFile = await vault.create(fileName, '');
 
-        let meanTextHeight : number = this.calculateMeanTextHeight(pages);
+        let meanTextHeight : number = await this.calculateMeanTextHeight(pdf);
 
-        const markdownStrings : string[] = [];
-        let counter = 0;
-        let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
-        let leftMarginL = 0;
-        let yCoordL = 0, yCoordLL = 0;
-        let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
-        let pageCounter = 0;
         
         // ANNOTATION DATA
         // For footnotes
@@ -320,27 +335,84 @@ export class PDFContentExtractor {
         // For annotation metadata
         let annotationMetadata : any[] = [];
 
-        for (let j = 0; j < pages.length; j++) {
-            const page = pages[j];
-            const textContent = page.textContent;
-            const commonObjs = page.commonObjs;
-            const opList = page.opList;
-            const annotations = page.annotations;
+        let pageCounter = 0;
+        for (let j = 0; j < pdf.numPages; j++) {
+            const page = await pdf.getPage(j + 1);
+            const textContent = await page.getTextContent();
+            const opList = await page.getOperatorList();
+            const annotations = await page.getAnnotations();
+            const commonObjs = page.commonObjs._objs;
 
-            // if (j == 2) {
-            //     console.log(textContent);
-            //     console.log(commonObjs);
-            //     console.log(opList);
-            //     for (var i=0; i < opList.fnArray.length; i++) {
-            //         if (opList.fnArray[i] == this.pdfjs.OPS.paintJpegXObject) {
-            //             let op = opList.argsArray[i][0];
-            //             // console.log(opList.argsArray[i][0])
-            //         }
-            //         else if (opList.fnArray[i] == this.pdfjs.OPS.setFillRGBColor) {
-            //             let op = opList.argsArray[i];
-            //         }
-            //     }
-            // }
+            // For highlights
+            let highlightAccumulate : boolean = false;
+            let highlightAccumulator : string = '';
+
+            for (let i = 0; i < textContent.items.length; i++) {
+                const item = textContent.items[i];
+                let { str } = item;
+                const { dir, width, height, transform, fontName, hasEOL } = item;
+
+                // Do check for whether any annotation bounding boxes overlap with this item
+                // Handle annotations - highlight and comments as footnotes
+                let { highlightStart, highlightEnd, highlightL, highlightR, comment, commentText} = this.applyAnnotations(item, annotations, pageCounter);
+                if (highlightStart) {
+                    highlightAccumulate = true;
+                    highlightAccumulator = '';
+                }
+
+                // Italic, bold formatting
+                let leadingSpace;
+                let trailingSpace;
+                ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
+
+                // Handle any highlighting
+                ({ str, highlightAccumulate, highlightAccumulator } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, comment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
+
+            }
+
+            pageCounter++;
+
+            page.cleanup();
+        }
+
+        let metadataContents = ``;
+        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
+            const itemMeta = this.metadata[file.basename];
+            metadataContents += `---`;
+            metadataContents += formatBibtexAsMetadata(itemMeta);
+            metadataContents += `\n---`;
+            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
+            metadataContents += `\n${bib}`;
+            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
+        }
+        metadataContents += `\nSource: [[${file.path}]]`;
+        if (annotationMetadata.length > 0) {
+            metadataContents += `\n\n### Annotations\n`;
+            for (let annotation of annotationMetadata) {
+                metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
+                if (annotation.commentText !== '')
+                    metadataContents += `**${annotation.commentText}**`;
+            }
+            
+        }
+        metadataContents += `\n\n`;
+        await vault.append(newFile, metadataContents);
+
+        pageCounter = 0;
+        for (let j = 0; j < pdf.numPages; j++) {
+        // for (let j = 0; j < pages.length; j++) {
+            const markdownStrings : string[] = [];
+            let counter = 0;
+            let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
+            let leftMarginL = 0;
+            let yCoordL = 0, yCoordLL = 0;
+            let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
+
+            const page = await pdf.getPage(j + 1);
+            const textContent = await page.getTextContent();
+            const opList = await page.getOperatorList();
+            const annotations = await page.getAnnotations();
+            const commonObjs = page.commonObjs._objs;
 
             let inCode = false;
             let newLine = true;
@@ -375,8 +447,10 @@ export class PDFContentExtractor {
                 ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
 
                 // Handle any highlighting
-                ({ highlightAccumulate, highlightAccumulator } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, comment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
-                    
+                ({ str, highlightAccumulate, highlightAccumulator } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, comment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
+                if (highlightAccumulate)
+                    console.log(str);
+                        
                 let yDiff = 0;
                 let yDiff2 = 0;
                 if (transformL.length > 0) 
@@ -451,40 +525,31 @@ export class PDFContentExtractor {
             }
             
             pageCounter++;
+
+            // Release page resources.
+            page.cleanup();
+
+            // let markdownContents = markdownStrings.join('');
+            await vault.append(newFile, markdownStrings.join(''));
+
         }
 
-        let markdownContents = markdownStrings.join('');
-        let metadataContents = ``;
-        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
-            const itemMeta = this.metadata[file.basename];
-            metadataContents += `---`;
-            metadataContents += formatBibtexAsMetadata(itemMeta);
-            metadataContents += `\n---`;
-            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
-            metadataContents += `\n${bib}`;
-            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
-        }
-        metadataContents += `\nSource: [[${file.path}]]`;
-        if (annotationMetadata.length > 0) {
-            metadataContents += `\n\n### Annotations\n`;
-            for (let annotation of annotationMetadata) {
-                metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
-                if (annotation.commentText !== '')
-                    metadataContents += `**${annotation.commentText}**`;
-            }
-            
-        }
-        metadataContents += `\n\n`;
+        // let markdownContents = markdownStrings.join('');
 
-        markdownContents = `${metadataContents}${markdownContents}`;
+
+        // markdownContents = `${metadataContents}${markdownContents}`;
 
         // Add any footnotes 
+        let footnoteContents : string = '';
         for (let footnoteID in footnotes) {
             let footnoteText = footnotes[footnoteID];
-            markdownContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
+            footnoteContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
         }
+        await vault.append(newFile, footnoteContents);
 
-        const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
+        // await vault.append(newFile, markdownContents);
+
+        /*
         const byteLength = Buffer.byteLength(markdownContents, 'utf-8');
         const kb = Math.ceil(byteLength / 1024);
         if (kb > settings.pdfExtractFileSizeLimit && settings.pdfExtractFileSizeLimit > 0 && settings.pdfExtractChunkIfFileExceedsLimit === true) {
@@ -508,6 +573,7 @@ export class PDFContentExtractor {
             else
                 await vault.create(fileName, markdownContents);
         }
+        */
     };
 
     private continuedLineHandler(strL: string, markdownStrings: string[], counter: number, newLine: boolean, blockquote: boolean, widthL: number, width: any, treatEOLasNewLine: boolean, hasEOL: any, i: number, yDiff: number, height: any, leftMargin: number, leftMarginL: number, inCode: boolean, markdownText: string, str: any) {
@@ -623,7 +689,7 @@ export class PDFContentExtractor {
             annotationMetadata.push({ highlightText: highlightAccumulator, page: (pageCounter + 1), commentText: commentText });
             highlightAccumulate = false;
         }
-        return { highlightAccumulate, highlightAccumulator };
+        return { str, highlightAccumulate, highlightAccumulator };
     }
 
     private blockquoteHandler(height: any, meanTextHeight: number, i: number, leftMargin: number, leftMarginL: number, hasEOLL: boolean, blockquote: boolean, markdownText: string, str: any, leadingSpace: string, trailingSpace: string, strL: string) {
