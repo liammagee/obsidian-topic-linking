@@ -160,14 +160,14 @@ export class PDFContentExtractor {
                             }
                             parentID = annotation.id;
                             highlightEnd = true;
-                            if (annotation.contents.trim().length > 0) {
+                            if (annotation.contentsObj.str.trim().length > 0) {
                                 comment = true;
 
                                 if (includePageNumbersInFootnotes && commentText === '') {
                                     commentText = `[from page ${pageCounter + 1}] - `;
                                 }
 
-                                commentText += annotation.contents;
+                                commentText += annotation.contentsObj.str;
                             }
                         }
                     }
@@ -325,8 +325,25 @@ export class PDFContentExtractor {
         else 
             newFile = await vault.create(fileName, '');
 
-        let meanTextHeight : number = await this.calculateMeanTextHeight(pdf);
+        class ObjectPosition {
+            x: number;
+            y: number;
+            obj: any;
+            constructor(obj:any, x: number, y: number) {
+                this.obj = obj;
+                this.x = x;
+                this.y = y;
+            }
+            format() {
+                let str : string = this.obj;
+                return str;
+            }
+            copy() {
+                return new ObjectPosition(this.obj, this.x, this.y);
+            }
+        }
 
+        // let meanTextHeight : number = await this.calculateMeanTextHeight(pdf);
         
         // ANNOTATION DATA
         // For footnotes
@@ -336,8 +353,8 @@ export class PDFContentExtractor {
         let annotationMetadata : any[] = [];
 
         let pageCounter = 0;
-        for (let j = 0; j < pdf.numPages; j++) {
-            const page = await pdf.getPage(j + 1);
+        for (let j = 1; j <= pdf.numPages; j++) {
+            const page = await pdf.getPage(j);
             const textContent = await page.getTextContent();
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
@@ -399,24 +416,81 @@ export class PDFContentExtractor {
         await vault.append(newFile, metadataContents);
 
         pageCounter = 0;
-        for (let j = 0; j < pdf.numPages; j++) {
-        // for (let j = 0; j < pages.length; j++) {
-            const markdownStrings : string[] = [];
-            let counter = 0;
-            let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
-            let leftMarginL = 0;
-            let yCoordL = 0, yCoordLL = 0;
-            let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
+        let leftMarginsOdd : Record<number, number> = {},
+            leftMarginsEven : Record<number, number> = {};
+        const value = pdf.stats;
+        
+        let minH = -1, maxH = -1, totalH = 0, counterH = 0;
+        let fontScale : number = 1;
 
-            const page = await pdf.getPage(j + 1);
+        for (let j = 1; j <= pdf.numPages; j++) {
+            const page = await pdf.getPage(j);
+            const opList = await page.getOperatorList();
+            /*
+            if (j == 9) {
+                console.log(page)
+                for (let i = 0; i < opList.fnArray.length; i++) {
+                    const fnType : any = opList.fnArray[i];
+                    const args : any = opList.argsArray[i];
+                    console.log(fnType, args)
+                }
+            }
+            */
+            for (let i = 0; i < opList.fnArray.length; i++) {
+                const fnType : any = opList.fnArray[i];
+                const args : any = opList.argsArray[i];
+                if (fnType === this.pdfjs.OPS.setTextMatrix) {
+                    fontScale = args[0];
+                    let yScale = args[3];
+                    const x : number = args[4];
+                    const y : number = args[5];
+                    if (j % 2 === 0) {
+                        leftMarginsEven[x] = (leftMarginsEven[x] === undefined) ? 1 : leftMarginsEven[x] + 1;
+                    }
+                    else {
+                        leftMarginsOdd[x] = (leftMarginsOdd[x] === undefined) ? 1 : leftMarginsOdd[x] + 1;
+                    }
+                }
+                else if(fnType === this.pdfjs.OPS.setFont) {
+                    let fontSize : number = parseFloat(args[1]);
+                    if (fontSize > 0) {
+                        totalH += fontSize * fontScale;
+                        counterH++;
+                    }
+                }
+            }
+            // Release page resources.
+            page.cleanup();
+        }
+        let leftMarginOddLikely : number = 1000, leftMarginOddLikelyCounter : number = 0;
+        for (let key in leftMarginsOdd) {
+            if (leftMarginsOdd[key] > leftMarginOddLikelyCounter) {
+                leftMarginOddLikelyCounter = leftMarginsOdd[key];
+                leftMarginOddLikely = parseFloat(key);
+            } 
+        }
+        let leftMarginEvenLikely : number = 1000, leftMarginEvenLikelyCounter : number = 0;
+        for (let key in leftMarginsEven) {
+            if (leftMarginsEven[key] > leftMarginEvenLikelyCounter) {
+                leftMarginEvenLikelyCounter = leftMarginsEven[key];
+                leftMarginEvenLikely = parseFloat(key);
+            }
+        }
+        let meanTextHeight : number = totalH / counterH;        
+
+        let inBibliography : boolean = false;
+
+        for (let j = 1; j <= pdf.numPages; j++) {
+
+            const page = await pdf.getPage(j);
             const textContent = await page.getTextContent();
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
             const commonObjs = page.commonObjs._objs;
 
+            let counter = 0;
             let inCode = false;
-            let newLine = true;
-            let blockquote = false;
+
 
             // Make this a parameter perhaps
             const treatEOLasNewLine = false;
@@ -425,6 +499,608 @@ export class PDFContentExtractor {
             let highlightAccumulate : boolean = false;
             let highlightAccumulator : string = '';
 
+            // Save images
+            let displayCounter : number = 0;
+            let imagePaths : Record<number, string> = [];
+
+            let objPositions : ObjectPosition[] = [];
+            let runningText : string = '';
+            let positionRunningText : ObjectPosition = null;
+            let positionImg : ObjectPosition = null;
+            let processingText : boolean = false;
+            const LINE_HEIGHT_MIN = -1.0;
+            const LINE_HEIGHT_MAX = -1.5;
+            let xScale : number = 0, yScale : number = 0;
+            let italic : boolean = false;
+            let bold : boolean = false;
+            let blockquote : boolean = false;
+            let newLine : boolean = false;
+            let xSpaces : number = 0;
+            let xl = 0, yl = 0;
+            let xll = j % 2 == 1 ? leftMarginOddLikely : leftMarginEvenLikely;
+            let fontSize : number = 1;
+            let fontScale : number = 1, lastFontScale : number = 1;
+
+            let bounds = (test:number, min:number, max:number) =>  (test >= min && test <= max);
+            let setFontScale = (fontSize:number, scale:number) =>  fontScale = fontSize * scale;
+
+            const completeObject = (xn : number, yn: number) => {
+                if (runningText.trim() !== '') {
+                    if (runningText === 'BIBLIOGRAPHY')
+                        inBibliography = true;
+
+                    // Treat as a heading, and calculate the heading size by the height of the line
+                    let { headingPadding, heading, headingTrail } = this.headingHandler(fontScale, meanTextHeight, runningText);
+                    if (j == 9)
+                        console.log(headingPadding, heading, runningText, headingTrail, fontScale, meanTextHeight)
+                    runningText = `${headingPadding}${heading}${runningText}${headingTrail}`;
+
+                    positionRunningText.obj = runningText;
+                    objPositions.push(positionRunningText);
+                    runningText = '';
+                }
+                positionRunningText = new ObjectPosition(runningText, xn, yn);
+                lastFontScale = fontScale;
+                fontScale = fontSize * yScale;
+            };
+                    
+            for (let i = 0; i < opList.fnArray.length; i++) {
+                const fnType : any = opList.fnArray[i];
+                const args : any = opList.argsArray[i];
+                
+                if (fnType === this.pdfjs.OPS.beginText) {
+                    // processing text
+                    processingText = true;
+                }
+                else if (fnType === this.pdfjs.OPS.endText) {
+                    // if (j == 9)
+                    //     console.log('endText')
+                    processingText = false;
+                }
+                else if (fnType === this.pdfjs.OPS.setFont) {
+                    // processing font - look up from commonObjs
+                            
+                    const font : any = commonObjs[args[0]];
+                    const fontDataName = font.data.name;
+                    fontSize = parseFloat(args[1]);
+                    // if (j == 9)  
+                    //     console.log('setFont', fontScale, fontSize)
+                    italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1);
+                    bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1);
+                }
+                else if (fnType === this.pdfjs.OPS.setTextMatrix) {
+                    xScale = args[0];
+                    yScale = args[3];
+                    const x : number = args[4];
+                    const y : number = args[5];
+                    let xn :number = x;// * xScale * fontSize;
+                    // let yn :number = y;// * yScale * fontSize;
+                    let yn :number = y * Math.sign(yScale);
+                    let xChange : number = (xn - xl );
+                    let yChange : number = (yn - yl ) / (fontScale);
+                    newLine = false;
+
+                    // if (positionRunningText != null && (bounds(-yChange, LINE_HEIGHT_MAX, 0))) {
+                    if (positionRunningText != null && 
+                        ((yChange === 0) ||
+                         (bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= xll))) {
+                        // Do nothing
+                        newLine = bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
+
+                    }
+                    else {
+
+                        completeObject(xn, yn);
+
+                        let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
+                        let xmin : number = Math.round(xn - Math.abs(fontScale) * 5);
+                        // if (j == 9)
+                        //   console.log("setTextMatrix", leftMarginEvenLikely, xn, lastFontScale, fontScale, xmin, xmax)
+                        if (Math.abs(lastFontScale) > Math.abs(fontScale) && j % 2 === 0 && bounds(leftMarginEvenLikely, xmin, xmax)) {
+                            runningText = `> ${runningText}`;
+                        }
+                        else if (Math.abs(lastFontScale) > Math.abs(fontScale) && j % 2 === 1 && bounds(leftMarginOddLikely, xmin, xmax)) {
+                            runningText = `> ${runningText}`;
+                        }
+                    }
+                    xl = xn;
+                    yl = yn;
+                    xll = x;
+                }
+                else if (fnType === this.pdfjs.OPS.setLeadingMoveText || fnType === this.pdfjs.OPS.moveText) {
+                    let x : number = args[0];
+                    let y : number = args[1];
+                    let xn :number = xl + x * fontScale;
+                    let yn :number = yl + y * fontScale;
+                    newLine = false;
+                    // if (j == 9)
+                    //     console.log("setLeadingMoveText", fontScale, fontSize, yScale, x, y, xl, yl, (y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && x <= 0))
+                    // Review these conditions:
+                    // 1. Next line, without indent
+                    // 2. Next line, with indent
+                    // 3. Same line
+                    if (!inBibliography && 
+                        ((y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && x <= 0) || 
+                            (Math.abs(y) < 0.1))) {
+                        newLine = (y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && x <= 0);
+                        xSpaces = Math.abs(xn - xl) / fontScale;
+                        // Do not create a new object
+                    }
+                    else if (inBibliography && 
+                        ((j % 2 == 0 && y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && xn > leftMarginEvenLikely + xScale) || 
+                         (j % 2 == 1 && y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && xn > leftMarginOddLikely + xScale) || 
+                            (Math.abs(y) < 0.1))) {
+                        newLine = (j % 2 == 0 && y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && xn > leftMarginEvenLikely + xScale) || 
+                            (j % 2 == 1 && y < LINE_HEIGHT_MIN && y > LINE_HEIGHT_MAX && xn > leftMarginOddLikely + xScale);
+                        xSpaces = Math.abs(xn - xl) / fontScale;
+                        // Do not create a new object
+                    }
+                    else {
+                        completeObject(xn, yn);
+                    }
+                    xl = xn;
+                    yl = yn;
+                }
+                else if (fnType === this.pdfjs.OPS.showText) {
+                    const chars : any[] = args[0];
+                    let bufferText : string = '';
+                    for (let k = 0; k < chars.length; k++) {
+                        if (chars[k] !== undefined && chars[k].unicode !== undefined) 
+                            bufferText += chars[k].unicode;
+                    }
+                    if (newLine && runningText.length > 0 && !runningText.endsWith(' '))
+                        runningText += ' ';
+                    else if (xSpaces > runningText.length && runningText.length > 0)
+                        runningText += ' '; //.repeat(Math.round(xSpaces-runningText.length))
+                    // if (j == 9)
+                    //     console.log('showText', chars, bufferText, runningText);
+                    const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
+                    const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
+                    if (bold && bufferText.trim().length > 0) {
+                        if (runningText.endsWith('**')) {
+                            runningText = runningText.substring(0, runningText.length - 2);
+                            bufferText = `${bufferText.trim()}**${trailingSpace}`;
+                        }
+                        else 
+                            bufferText = `**${bufferText.trim()}**${trailingSpace}`;
+                    }
+                    if (italic && bufferText.trim().length > 0) {
+                        if (runningText.endsWith('*')) {
+                            runningText = runningText.substring(0, runningText.length - 1);
+                            bufferText = `${bufferText.trim()}*${trailingSpace}`;
+                        }
+                        else
+                            bufferText = `*${bufferText.trim()}*${trailingSpace}`;
+                    }
+                        
+                    runningText += bufferText;
+
+                    if ('BIBLIOGRAPHY' === bufferText.trim()) {
+                        inBibliography = true;
+                    }
+                }
+                else if (fnType === this.pdfjs.OPS.transform) {
+                    const xScale : number = args[0];
+                    const yScale : number = args[3];
+                    const x : number = args[4];
+                    const y : number = args[5];
+                    const yAdj : number = y + yScale;
+                    positionImg = new ObjectPosition(null, x, yAdj);
+                }
+                // Image handling
+                else if (fnType === this.pdfjs.OPS.paintImageXObject) {
+                    let img = page.objs.get(args[0])
+                    // Convert and save image to a PNG
+                    if (img != null) { 
+                        let bn = '';
+                        if (file !== null)
+                            bn = file.basename;
+                        const imageName = `${bn}_${j}_${i+1}`.replace(/\s+/g, '');
+                        const imagePath = normalizePath(`${this.generatedPath}${imageName}.png`);
+                        try {
+                            const imageFile = <TFile> vault.getAbstractFileByPath(imagePath);
+                            const md = `![${imageName}](${imagePath})`;
+                            imagePaths[displayCounter] = md;
+                            
+                            positionImg.obj = md;
+                            objPositions.push(positionImg);
+    
+                            displayCounter++;
+                            if (imageFile != null)
+                                continue;
+                                // For the moment, don't overwrite images - skip the following logic
+                                // await vault.delete(imageFile);
+    
+                            let imgDataNew : number[] = [];
+                            const imgSize : number = img.data.length;
+                            if (img.kind === ImageKind.GRAYSCALE_1BPP) {
+                                const imgSizeNew = imgSize / 1 * 4;
+                                imgDataNew = new Array<number>(imgSizeNew);
+                                for (let k = 0, l = 0; k < imgSize; k++, l+=4) {
+                                    imgDataNew[l] = img.data[k];
+                                    imgDataNew[l+1] = img.data[k];
+                                    imgDataNew[l+2] = img.data[k];
+                                    imgDataNew[l+3] = 255;
+                                }
+                            }
+                            else if (img.kind === ImageKind.RGB_24BPP) {
+                                const imgSizeNew = imgSize / 3 * 4;
+                                imgDataNew = new Array<number>(imgSizeNew);
+                                for (let k = 0, l = 0; k < imgSize; k++, l++) {
+                                    imgDataNew[l] = img.data[k];
+                                    if (k % 3 == 2) {
+                                        imgDataNew[(l++)+1] = 255;
+                                    }
+                                }
+                            }
+                            else if (img.kind === ImageKind.RGBA_32BPP) {
+                                imgDataNew = new Array<number>(imgSize);
+                                for (let k = 0; k < imgSize; k++) {
+                                    imgDataNew[k] = img.data[k];
+                                }
+                            }
+    
+                            const buffer = Buffer.from(imgDataNew);
+                            const pngInput = { data: buffer, width: img.width, height: img.height };
+                            const png = await encode(pngInput);
+                            await vault.createBinary(imagePath, png);
+                        }
+                        catch (e) {
+                            console.log(`Failed to process image in ${file.basename}. Error: ${e}.`);
+                        }
+                    }
+
+                }
+            }
+            if (runningText.trim() !== '') {
+                positionRunningText.obj = runningText;
+                objPositions.push(positionRunningText);
+            }
+
+            objPositions.sort((a, b) => {
+                let ay = Math.round(a.y);
+                let by = Math.round(b.y);
+                if (Math.abs(ay - by) > 0.5)
+                    return by - ay;
+                else
+                    return a.x - b.x;
+            });
+            let mdStrings = objPositions.map((pos) => { return pos.format(); });
+            mdStrings.splice(0, 0, `\n\n`);
+            if (settings.pdfExtractIncludePagesAsHeadings) {
+                counter++;
+                mdStrings.splice(1, 0, `---\n## Page ${j}`);
+            }
+            let mdString : string = mdStrings.join('\n\n');
+
+            if (j == 9) {
+                console.log('objPositions', objPositions);
+            }
+
+            pageCounter++;
+
+            // Release page resources.
+            page.cleanup();
+
+            // let markdownContents = markdownStrings.join('');
+            // await vault.append(newFile, markdownStrings.join(''));
+            await vault.append(newFile, mdString);
+
+        }
+
+        // Add any footnotes 
+        let footnoteContents : string = '';
+        for (let footnoteID in footnotes) {
+            let footnoteText = footnotes[footnoteID];
+            footnoteContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
+        }
+        await vault.append(newFile, footnoteContents);
+
+    };
+
+
+    /**
+     * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
+     * @param file 
+     * @param fileCounter 
+     */
+     processPDFWithTextContents = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
+
+        // const pages: Array<any> = await this.getContent(vault, file, fileCounter);
+        const buffer = await vault.readBinary(file);
+        const pdf = await this.pdfjs.getDocument(buffer).promise;
+        console.log(`Loading file num ${fileCounter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
+
+        const subPath = this.subPathFactory(file, this.pdfPath.length);
+        const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
+        let newFile = <TFile> vault.getAbstractFileByPath(fileName);
+        if (newFile !== null)
+            await vault.modify(newFile, '');
+        else 
+            newFile = await vault.create(fileName, '');
+
+        let meanTextHeight : number = await this.calculateMeanTextHeight(pdf);
+        
+        // ANNOTATION DATA
+        // For footnotes
+        let footnoteCounter = 1;
+        let footnotes : Record<number, string> = {};
+        // For annotation metadata
+        let annotationMetadata : any[] = [];
+
+        let pageCounter = 0;
+        for (let j = 1; j <= pdf.numPages; j++) {
+            const page = await pdf.getPage(j);
+            const textContent = await page.getTextContent();
+            const opList = await page.getOperatorList();
+            const annotations = await page.getAnnotations();
+            const commonObjs = page.commonObjs._objs;
+
+            // For highlights
+            let highlightAccumulate : boolean = false;
+            let highlightAccumulator : string = '';
+
+            for (let i = 0; i < textContent.items.length; i++) {
+                const item = textContent.items[i];
+                let { str } = item;
+                const { dir, width, height, transform, fontName, hasEOL } = item;
+
+                // Do check for whether any annotation bounding boxes overlap with this item
+                // Handle annotations - highlight and comments as footnotes
+                let { highlightStart, highlightEnd, highlightL, highlightR, comment, commentText} = this.applyAnnotations(item, annotations, pageCounter);
+                if (highlightStart) {
+                    highlightAccumulate = true;
+                    highlightAccumulator = '';
+                }
+
+                // Italic, bold formatting
+                let leadingSpace;
+                let trailingSpace;
+                ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
+
+                // Handle any highlighting
+                ({ str, highlightAccumulate, highlightAccumulator } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, comment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
+
+            }
+
+            pageCounter++;
+
+            page.cleanup();
+        }
+
+        let metadataContents = ``;
+        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
+            const itemMeta = this.metadata[file.basename];
+            metadataContents += `---`;
+            metadataContents += formatBibtexAsMetadata(itemMeta);
+            metadataContents += `\n---`;
+            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
+            metadataContents += `\n${bib}`;
+            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
+        }
+        metadataContents += `\nSource: [[${file.path}]]`;
+        if (annotationMetadata.length > 0) {
+            metadataContents += `\n\n### Annotations\n`;
+            for (let annotation of annotationMetadata) {
+                metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
+                if (annotation.commentText !== '')
+                    metadataContents += `**${annotation.commentText}**`;
+            }
+            
+        }
+        metadataContents += `\n\n`;
+        await vault.append(newFile, metadataContents);
+
+        pageCounter = 0;
+
+
+        for (let j = 1; j <= pdf.numPages; j++) {
+
+            const markdownStrings : string[] = [];
+            let counter = 0;
+            let strL = '', widthL = 0, heightL = 0, transformL : string[] = [], fontNameL = '', hasEOLL = false;
+            let leftMarginL = 0;
+            let yCoordL = 0, yCoordLL = 0;
+            let strLL = '', widthLL = 0, heightLL = 0, transformLL : string[] = [], fontNameLL = '', hasEOLLL = false;
+
+            const page = await pdf.getPage(j);
+            const textContent = await page.getTextContent();
+            const opList = await page.getOperatorList();
+            const annotations = await page.getAnnotations();
+            const commonObjs = page.commonObjs._objs;
+
+            let inCode = false;
+
+
+            // Make this a parameter perhaps
+            const treatEOLasNewLine = false;
+
+            // For highlights
+            let highlightAccumulate : boolean = false;
+            let highlightAccumulator : string = '';
+
+            // Save images
+            let textCounter : number = 0;
+            let displayCounter : number = 0;
+            let imagePaths : Record<number, string> = [];
+
+
+            // EXPERIMENTAL TEXT PROCESSING - TO GET TEXT ORDERING RIGHT
+            class ObjectPosition {
+                x: number;
+                y: number;
+                obj: any;
+                italic: boolean;
+                bold: boolean;
+                constructor(obj:any, x: number, y: number) {
+                    this.obj = obj;
+                    this.x = x;
+                    this.y = y;
+                }
+                format() {
+                    let str : string = this.obj;
+                    return str;
+                }
+                copy() {
+                    return new ObjectPosition(this.obj, this.x, this.y);
+                }
+            }
+            let objPositions : ObjectPosition[] = [];
+            let runningText : string = '';
+            let positionRunningText : ObjectPosition = null;
+            let positionImg : ObjectPosition = null;
+            let processingText : boolean = false;
+            const LINE_HEIGHT_MIN = -1.0;
+            const LINE_HEIGHT_MAX = -1.5;
+            let xScale : number = 0, yScale : number = 0;
+            let italic : boolean = false;
+            let bold : boolean = false;
+            let blockquote : boolean = false;
+            let newLine : boolean = false;
+            let xl = 0, yl = 0;
+            let fontSize : number = 1;
+
+            let bounds = (test:number, min:number, max:number) => {
+                return (test >= min && test <= max);
+            }  
+
+            
+            for (let i = 0; i < opList.fnArray.length; i++) {
+                const fnType : any = opList.fnArray[i];
+                const args : any = opList.argsArray[i];
+
+                if (fnType === this.pdfjs.OPS.transform) {
+                    const xScale : number = args[0];
+                    const yScale : number = args[3];
+                    const x : number = args[4];
+                    const y : number = args[5];
+                    const yAdj : number = y + yScale;
+                    positionImg = new ObjectPosition(null, x, yAdj);
+                }
+                // Image handling
+                else if (fnType === this.pdfjs.OPS.paintImageXObject) {
+                    let img = page.objs.get(args[0])
+                    // Convert and save image to a PNG
+                    if (img != null) { 
+                        let bn = '';
+                        if (file !== null)
+                            bn = file.basename;
+                        const imageName = `${bn}_${j+1}_${i+1}`.replace(/\s+/g, '');
+                        const imagePath = normalizePath(`${this.generatedPath}${imageName}.png`);
+                        const imageFile = <TFile> vault.getAbstractFileByPath(imagePath);
+                        const md = `![${imageName}](${imagePath})`;
+                        imagePaths[displayCounter] = md;
+                        
+                        positionImg.obj = md;
+                        objPositions.push(positionImg);
+
+                        displayCounter++;
+                        if (imageFile != null)
+                            continue;
+                            // For the moment, don't overwrite images - skip the following logic
+                            // await vault.delete(imageFile);
+
+                        let imgDataNew : number[] = [];
+                        const imgSize : number = img.data.length;
+                        if (img.kind === ImageKind.GRAYSCALE_1BPP) {
+                            const imgSizeNew = imgSize / 1 * 4;
+                            imgDataNew = new Array<number>(imgSizeNew);
+                            for (let k = 0, l = 0; k < imgSize; k++, l+=4) {
+                                imgDataNew[l] = img.data[k];
+                                imgDataNew[l+1] = img.data[k];
+                                imgDataNew[l+2] = img.data[k];
+                                imgDataNew[l+3] = 255;
+                            }
+                        }
+                        else if (img.kind === ImageKind.RGB_24BPP) {
+                            const imgSizeNew = imgSize / 3 * 4;
+                            imgDataNew = new Array<number>(imgSizeNew);
+                            for (let k = 0, l = 0; k < imgSize; k++, l++) {
+                                imgDataNew[l] = img.data[k];
+                                if (k % 3 == 2) {
+                                    imgDataNew[(l++)+1] = 255;
+                                }
+                            }
+                        }
+                        else if (img.kind === ImageKind.RGBA_32BPP) {
+                            imgDataNew = new Array<number>(imgSize);
+                            for (let k = 0; k < imgSize; k++) {
+                                imgDataNew[k] = img.data[k];
+                            }
+                        }
+
+                        const buffer = Buffer.from(imgDataNew);
+                        const pngInput = { data: buffer, width: img.width, height: img.height };
+                        const png = await encode(pngInput);
+                        await vault.createBinary(imagePath, png);
+                    }
+                }
+            }
+
+
+            /*
+            let textPositions : any[] = [];
+            runningText  = '';
+            positionRunningText  = null;
+            let xl = -1, yl = -1;
+            for (let i = 0; i < textContent.items.length; i++) {
+                const item = textContent.items[i];
+                let markdownText = '';
+                let { str } = item;
+                const { dir, width, height, transform, fontName, hasEOL } = item;
+                let xScale = transform[0], yScale = transform[3];
+                let x = parseFloat(transform[4]), y = parseFloat(transform[5]);
+                let xChange = x - xl;
+                let yChange = y - yl;
+
+                if (j == 0) {
+                    // console.log("x", x, xl, xChange);
+                    console.log("y", y, yl, yChange);
+                    console.log("fontName", fontName);
+                    console.log("item", item);
+                    console.log("commonObjs", commonObjs);
+                    // console.log("conditions", (yChange < 0 && xChange > 0));
+                    // console.log("scale", xScale, yScale);
+                    // console.log("positionRunningText", positionRunningText);
+                    // console.log("runningText", runningText);
+                    console.log("str", `|${str}|`);
+                }
+                // Italic, bold formatting
+                let leadingSpace;
+                let trailingSpace;
+                ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
+                if (positionRunningText === null) {
+                    runningText = str;
+                    positionRunningText = new ObjectPosition(runningText, x, y);
+                    xl = x;
+                    yl = y;
+                }
+                else if (-Math.abs(yChange) < LINE_HEIGHT_MAX * yScale || (yChange < 0 && xChange > 0)) {
+                    positionRunningText.obj = runningText;
+                    objPositions.push(positionRunningText);
+                    runningText = str;
+                    positionRunningText = new ObjectPosition(runningText, x, y);
+                    xl = x;
+                    yl = y;
+                }
+                else if (yChange === 0) {
+                    runningText += str;
+                    xl = x;
+                    yl = y;
+                }
+                else {
+                    runningText += ' ';
+                    runningText += str;
+                    xl = x;
+                    yl = y;
+                }
+            }
+            if (positionRunningText !== null) {
+                objPositions.push(positionRunningText);
+                positionRunningText.obj = runningText;
+            }
+            */
+                
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
                 let markdownText = '';
@@ -490,12 +1166,16 @@ export class PDFContentExtractor {
 
                 // Important! Escape all double brackets, and double spaces with single spaces
                 markdownText = markdownText.replaceAll('[[', `\\[\\[`).replaceAll('  ', ' ');
+                let x: number = transform[4];
+                let y: number = transform[5];
+                // objPositions.push(new ObjectPosition(markdownText, x, y));
 
                 if (i == 0 && settings.pdfExtractIncludePagesAsHeadings) {
                     counter++;
                     markdownStrings.push(`\n\n---\n## Page ${j + 1}\n\n`);
                 }
                 counter++;
+
                 markdownStrings.push(markdownText);
 
                 // Copy second last line
@@ -521,7 +1201,39 @@ export class PDFContentExtractor {
                 yCoordL = yCoord;
 
             }
-            
+
+            objPositions.sort((a, b) => {
+                let ay = Math.round(a.y);
+                let by = Math.round(b.y);
+                if (Math.abs(ay - by) > 0.5)
+                    return by - ay;
+                else
+                    return a.x - b.x;
+            });
+            let mdStrings = objPositions.map((pos) => { return pos.format(); });
+            mdStrings.splice(0, 0, `\n\n`);
+            if (settings.pdfExtractIncludePagesAsHeadings) {
+                counter++;
+                mdStrings.splice(1, 0, `---\n## Page ${j}`);
+            }
+            let mdString : string = mdStrings.join('\n\n');
+
+            if (j == 9) {
+                console.log('objPositions', objPositions);
+            }
+
+            for (let i = 0; i < displayCounter; i++) {
+                if (imagePaths[i] != null) {
+                    if (i < textContent.items.length) {
+                        markdownStrings.push(imagePaths[i]);
+                    }
+                    else {
+                        markdownStrings.splice(i, 0, imagePaths[i]);
+                    }
+                }
+            }
+
+
             pageCounter++;
 
             // Release page resources.
@@ -529,13 +1241,9 @@ export class PDFContentExtractor {
 
             // let markdownContents = markdownStrings.join('');
             await vault.append(newFile, markdownStrings.join(''));
+            // await vault.append(newFile, mdString);
 
         }
-
-        // let markdownContents = markdownStrings.join('');
-
-
-        // markdownContents = `${metadataContents}${markdownContents}`;
 
         // Add any footnotes 
         let footnoteContents : string = '';
@@ -545,34 +1253,8 @@ export class PDFContentExtractor {
         }
         await vault.append(newFile, footnoteContents);
 
-        // await vault.append(newFile, markdownContents);
-
-        /*
-        const byteLength = Buffer.byteLength(markdownContents, 'utf-8');
-        const kb = Math.ceil(byteLength / 1024);
-        if (kb > settings.pdfExtractFileSizeLimit && settings.pdfExtractFileSizeLimit > 0 && settings.pdfExtractChunkIfFileExceedsLimit === true) {
-            // Create a chunk size approximately half the maximum size
-            const chunkNum = Math.ceil(byteLength / (settings.pdfExtractFileSizeLimit * 1024 * 0.5));
-            // Split the contents into approximately equal segments
-            const segments = this.chunkSubstring(markdownContents, chunkNum);
-            for (let i = 0; i < segments.length; i++) {
-                const segmentPath = normalizePath(`${this.generatedPath}${subPath}${file.basename}_${i+1}.md`);
-                const newSegmentFile = <TFile> vault.getAbstractFileByPath(segmentPath);
-                if (newSegmentFile !== null)
-                    await vault.modify(newSegmentFile, segments[i]);
-                else
-                    await vault.create(segmentPath, segments[i]);
-            }
-        }
-        else {
-            const newFile = <TFile> vault.getAbstractFileByPath(fileName);
-            if (newFile !== null)
-                await vault.modify(newFile, markdownContents);
-            else
-                await vault.create(fileName, markdownContents);
-        }
-        */
     };
+
 
     private continuedLineHandler(strL: string, markdownStrings: string[], counter: number, newLine: boolean, blockquote: boolean, widthL: number, width: any, treatEOLasNewLine: boolean, hasEOL: any, i: number, yDiff: number, height: any, leftMargin: number, leftMarginL: number, inCode: boolean, markdownText: string, str: any) {
         if (strL.endsWith('-')) {
@@ -656,8 +1338,8 @@ export class PDFContentExtractor {
             const headingSize = Math.ceil(0.5 / diffH);
             if (headingSize <= 6) {
                 heading = "#".repeat(headingSize) + ' ';
-                headingPadding = "\n".repeat(7 - headingSize);
-                headingTrail = "\n".repeat(2);
+                headingPadding = "\n".repeat(Math.floor((6 - headingSize) / 2));
+                // headingTrail = "\n".repeat(1);
             }
         }
         // In the case where all the text is upper case, treat as a level 3 heading
@@ -666,8 +1348,8 @@ export class PDFContentExtractor {
             const headingSize = 3;
             if (headingSize <= 6) {
                 heading = "#".repeat(headingSize) + ' ';
-                headingPadding = "\n".repeat(7 - headingSize);
-                headingTrail = "\n".repeat(2);
+                headingPadding = "\n".repeat(Math.floor((6 - headingSize) / 2));
+                // headingTrail = "\n".repeat(1);
             }
         }
         return { headingPadding, heading, headingTrail };
