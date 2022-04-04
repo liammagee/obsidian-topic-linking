@@ -319,11 +319,11 @@ export class PDFContentExtractor {
             const page = await pdf.getPage(j);
             const opList = await page.getOperatorList();
             if (j == 1) {
-                console.log(page)
+                // console.log(page)
                 for (let i = 0; i < opList.fnArray.length; i++) {
                     const fnType : any = opList.fnArray[i];
                     const args : any = opList.argsArray[i];
-                    console.log(fnType, args)
+                    // console.log(fnType, args)
                 }
             }
 
@@ -494,8 +494,8 @@ export class PDFContentExtractor {
                     subscript = false;
                     let localFontScale = fontSize * yScale;
 
-                    if (j == 1)
-                        console.log("setTextMatrix", yScale, yChange, lastFontScale, fontScale, positionRunningText)
+                    // if (j == 1)
+                    //     console.log("setTextMatrix", yScale, yChange, lastFontScale, fontScale, positionRunningText)
                     // if (positionRunningText != null && (bounds(-yChange, LINE_HEIGHT_MAX, 0))) {
                     if (positionRunningText != null && 
                          (bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= xll)) {
@@ -560,8 +560,8 @@ export class PDFContentExtractor {
                     }
                     xl = xn;
                     yl = yn;
-                    if (j == 1)
-                        console.log("setLeadingMoveText", x, y, bounds(y, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN));
+                    // if (j == 1)
+                    //     console.log("setLeadingMoveText", x, y, bounds(y, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN));
 
                 }
                 else if (fnType === this.pdfjs.OPS.nextLine) {
@@ -656,8 +656,8 @@ export class PDFContentExtractor {
                             annotationMetadata, 
                             j));
     
-                    if (j == 1)
-                        console.log("showText", newLine, `%${bufferText}%`, `%${runningText}%`, `@${str}@`);
+                    // if (j == 1)
+                    //     console.log("showText", newLine, `%${bufferText}%`, `%${runningText}%`, `@${str}@`);
     
                     if (str.trim().length == 0) 
                         str = '';
@@ -1200,9 +1200,9 @@ export class PDFContentExtractor {
             }
             let mdString : string = mdStrings.join('\n\n');
 
-            if (j == 1) {
-                console.log('objPositions', objPositions);
-            }
+            // if (j == 1) {
+            //     console.log('objPositions', objPositions);
+            // }
 
             for (let i = 0; i < displayCounter; i++) {
                 if (imagePaths[i] != null) {
