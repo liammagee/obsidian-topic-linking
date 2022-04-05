@@ -14,6 +14,7 @@ export interface TopicLinkingSettings {
     pdfExtractFileSizeLimit: number;
     pdfExtractChunkIfFileExceedsLimit: boolean;
     
+    pdfExtractIncludeImages: boolean;
     pdfExtractIncludePagesAsHeadings: boolean;
     pdfExtractAnnotations: boolean;
     pdfExtractAnnotationsIncludeComments: boolean;
@@ -55,6 +56,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     pdfExtractFileSizeLimit: 5000,
     pdfExtractChunkIfFileExceedsLimit: true,
 
+    pdfExtractIncludeImages: true,
     pdfExtractIncludePagesAsHeadings: true,
     pdfExtractAnnotations: true,
     pdfExtractAnnotationsIncludeComments: true,
@@ -181,13 +183,24 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h4', { text: 'Experimental' });
         new Setting(containerEl)
+            .setName('Extract and Include Images')
+            .setDesc('Extracts images, and inserts Markdown image references.')
+            .addToggle((toggle) => {
+                // toggle.inputEl.setAttribute("type", "boolean");
+                toggle.setValue(this.plugin.settings.pdfExtractIncludeImages)
+                    .onChange(async (value) => {
+                        this.plugin.settings.pdfExtractIncludeImages = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
             .setName('Include Pages As Headings')
             .setDesc('Inserts *Page X* headings into the generated Markdown. This can be useful for linking to specific pages.')
             .addToggle((toggle) => {
                 // toggle.inputEl.setAttribute("type", "boolean");
-                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                toggle.setValue(this.plugin.settings.pdfExtractIncludePagesAsHeadings)
                     .onChange(async (value) => {
-                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        this.plugin.settings.pdfExtractIncludePagesAsHeadings = value;
                         await this.plugin.saveSettings();
                     });
             });
@@ -196,9 +209,9 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
             .setDesc('Extracts annotations from PDF as highlights.')
             .addToggle((toggle) => {
                 // toggle.inputEl.setAttribute("type", "boolean");
-                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                toggle.setValue(this.plugin.settings.pdfExtractAnnotations)
                     .onChange(async (value) => {
-                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        this.plugin.settings.pdfExtractAnnotations = value;
                         await this.plugin.saveSettings();
                     });
             });
@@ -207,9 +220,9 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
             .setDesc('Includes any comments attached to extracted annotations as endnotes.')
             .addToggle((toggle) => {
                 // toggle.inputEl.setAttribute("type", "boolean");
-                toggle.setValue(this.plugin.settings.pdfExtractChunkIfFileExceedsLimit)
+                toggle.setValue(this.plugin.settings.pdfExtractAnnotationsIncludeComments)
                     .onChange(async (value) => {
-                        this.plugin.settings.pdfExtractChunkIfFileExceedsLimit = value;
+                        this.plugin.settings.pdfExtractAnnotationsIncludeComments = value;
                         await this.plugin.saveSettings();
                     });
             });

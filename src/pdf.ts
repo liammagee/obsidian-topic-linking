@@ -665,7 +665,7 @@ export class PDFContentExtractor {
                         inBibliography = true;
                     }
                 }
-                else if (fnType === this.pdfjs.OPS.transform) {
+                else if (fnType === this.pdfjs.OPS.transform && settings.pdfExtractIncludeImages) {
                     const xScale : number = args[0];
                     const yScale : number = args[3];
                     const x : number = args[4];
@@ -674,7 +674,7 @@ export class PDFContentExtractor {
                     positionImg = new ObjectPosition(null, x, yAdj);
                 }
                 // Image handling
-                else if (fnType === this.pdfjs.OPS.paintImageXObject) {
+                else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
                     let img = page.objs.get(args[0])
                     // Convert and save image to a PNG
                     if (img != null) { 
@@ -789,9 +789,8 @@ export class PDFContentExtractor {
             mdString = mdString.replace('ﬂ ', 'ﬂ');
             mdString = mdString.replace('ﬁ ', 'ﬁ ');
 
-            if (j == 3) {
-                console.log('objPositions', page.view, objPositions);
-            }
+            if (j == DEBUG_PAGE) 
+                console.log('objPositions', objPositions);
 
             pageCounter++;
 
