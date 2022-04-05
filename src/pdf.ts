@@ -16,6 +16,8 @@ const ImageKind = {
     RGBA_32BPP: 3
   };
 
+const DEBUG_PAGE : number = 0;
+
 export class PDFContentExtractor {
     pdfjs: any;
     generatedPath: string;
@@ -241,7 +243,7 @@ export class PDFContentExtractor {
             let highlightAccumulate : boolean = false;
             let highlightAccumulator : string = '';
 
-            if (j == 3) {
+            if (j == DEBUG_PAGE) {
                 // console.log(page)
                 for (let i = 0; i < opList.fnArray.length; i++) {
                     const fnType : any = opList.fnArray[i];
@@ -459,7 +461,7 @@ export class PDFContentExtractor {
                     processingText = true;
                 }
                 else if (fnType === this.pdfjs.OPS.endText) {
-                    // if (j == 3)
+                    // if (j == DEBUG_PAGE)
                     //     console.log('endText')
                     processingText = false;
                 }
@@ -469,7 +471,7 @@ export class PDFContentExtractor {
                     const font : any = commonObjs[args[0]];
                     const fontDataName = font.data.name;
                     fontSize = parseFloat(args[1]);
-                    // if (j == 3)  
+                    // if (j == DEBUG_PAGE)  
                     //     console.log('setFont', fontScale, fontSize)
                     italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1);
                     bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1);
@@ -515,7 +517,7 @@ export class PDFContentExtractor {
                             runningText = `> ${runningText}`;
                         }
                     }
-                    if (j == 3)
+                    if (j == DEBUG_PAGE)
                         console.log("setTextMatrix", newLine, x, xl, xll, yScale, yChange, lastFontScale, fontScale)
                     xl = xn;
                     yl = yn;
@@ -554,7 +556,7 @@ export class PDFContentExtractor {
                     }
                     xl = xn;
                     yl = yn;
-                    if (j == 3)
+                    if (j == DEBUG_PAGE)
                         console.log("setLeadingMoveText", x, y, xl, yl);
 
                 }
@@ -598,7 +600,7 @@ export class PDFContentExtractor {
                     // Apply annotations
                     let results : any = this.applyAnnotations(item, annotations, j);
                     let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = results;
-                    if (j == 3) 
+                    if (j == DEBUG_PAGE) 
                         console.log('showText', j, i, bufferText);
                         
                     if (highlightStart) {
@@ -649,11 +651,13 @@ export class PDFContentExtractor {
                             annotationMetadata, 
                             j));
     
-                    // if (j == 3)
+                    // if (j == DEBUG_PAGE)
                     //     console.log("showText", newLine, `%${bufferText}%`, `%${runningText}%`, `@${str}@`);
     
+                    // Causes problems. Remove when safe to do so.
                     // if (str.trim().length == 0) 
                     //     str = '';
+
                     runningText += str;
                     // runningText += bufferText;
 
