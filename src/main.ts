@@ -98,8 +98,10 @@ export default class TopicLinkingPlugin extends Plugin {
             callback: async () => {
 
                 const { vault } = this.app;
-
-                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadataBibtex, factory);
+                console.time('pdfProcessing')
+                await new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadataBibtex, factory);
+                
+                console.timeEnd('pdfProcessing')
 
             }
         });

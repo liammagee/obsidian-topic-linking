@@ -212,7 +212,6 @@ export class PDFContentExtractor {
             }
         }
 
-        // let meanTextHeight : number = await this.calculateMeanTextHeight(pdf);
         
         // ANNOTATION DATA
         // For footnotes
@@ -223,6 +222,14 @@ export class PDFContentExtractor {
 
         let pageCounter = 0;
         let annotatedObjs : any = {};
+
+
+        pageCounter = 0;
+        let leftMarginsOdd : Record<number, number> = {},
+            leftMarginsEven : Record<number, number> = {};
+        let totalH = 0, counterH = 0;
+        let fontScale : number = 1;
+
         for (let j = 1; j <= pdf.numPages; j++) {
             const page = await pdf.getPage(j);
             const textContent = await page.getTextContent();
@@ -233,6 +240,15 @@ export class PDFContentExtractor {
             // For highlights
             let highlightAccumulate : boolean = false;
             let highlightAccumulator : string = '';
+
+            if (j == 3) {
+                // console.log(page)
+                for (let i = 0; i < opList.fnArray.length; i++) {
+                    const fnType : any = opList.fnArray[i];
+                    const args : any = opList.argsArray[i];
+                    console.log(fnType, args)
+                }
+            }
 
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
@@ -249,10 +265,10 @@ export class PDFContentExtractor {
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
-                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentText} = this.applyAnnotations(
+                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = this.applyAnnotations(
                                                         item, 
                                                         annotations, 
-                                                        pageCounter);
+                                                        j);
                 if (highlightStart) {
                     highlightAccumulate = true;
                     highlightAccumulator = '';
@@ -273,58 +289,13 @@ export class PDFContentExtractor {
                                                         highlightR, 
                                                         isComment, 
                                                         footnotes, 
+                                                        commentRef, 
                                                         commentText, 
                                                         highlightAccumulate, 
                                                         highlightAccumulator, 
                                                         annotationMetadata, 
                                                         pageCounter));
 
-            }
-
-            pageCounter++;
-
-            page.cleanup();
-        }
-
-        let metadataContents = ``;
-        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
-            const itemMeta = this.metadata[file.basename];
-            metadataContents += `---`;
-            metadataContents += formatBibtexAsMetadata(itemMeta);
-            metadataContents += `\n---`;
-            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
-            metadataContents += `\n${bib}`;
-            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
-        }
-        metadataContents += `\nSource: [[${file.path}]]`;
-        if (annotationMetadata.length > 0) {
-            metadataContents += `\n\n### Annotations\n`;
-            for (let annotation of annotationMetadata) {
-                metadataContents += `\n - "${annotation.highlightText.trim()}" ([[#Page ${annotation.page}]])`;
-                if (annotation.commentText !== '')
-                    metadataContents += `**${annotation.commentText}**`;
-            }
-            
-        }
-        metadataContents += `\n\n`;
-        await vault.append(newFile, metadataContents);
-
-        pageCounter = 0;
-        let leftMarginsOdd : Record<number, number> = {},
-            leftMarginsEven : Record<number, number> = {};
-        let totalH = 0, counterH = 0;
-        let fontScale : number = 1;
-
-        for (let j = 1; j <= pdf.numPages; j++) {
-            const page = await pdf.getPage(j);
-            const opList = await page.getOperatorList();
-            if (j == 1) {
-                // console.log(page)
-                for (let i = 0; i < opList.fnArray.length; i++) {
-                    const fnType : any = opList.fnArray[i];
-                    const args : any = opList.argsArray[i];
-                    // console.log(fnType, args)
-                }
             }
 
             for (let i = 0; i < opList.fnArray.length; i++) {
@@ -350,9 +321,14 @@ export class PDFContentExtractor {
                     }
                 }
             }
-            // Release page resources.
+
+
+            pageCounter++;
+
             page.cleanup();
         }
+
+        // Calculate odd and even margins, average text height
         let leftMarginOddLikely : number = 1000, leftMarginOddLikelyCounter : number = 0;
         for (let key in leftMarginsOdd) {
             if (leftMarginsOdd[key] > leftMarginOddLikelyCounter) {
@@ -369,6 +345,32 @@ export class PDFContentExtractor {
         }
         let meanTextHeight : number = totalH / (counterH * 0.9);        
 
+        let metadataContents = ``;
+        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
+            const itemMeta = this.metadata[file.basename];
+            metadataContents += `---`;
+            metadataContents += formatBibtexAsMetadata(itemMeta);
+            metadataContents += `\n---`;
+            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
+            metadataContents += `\n${bib}`;
+            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
+        }
+        metadataContents += `\nSource: [[${file.path}]]`;
+        if (annotationMetadata.length > 0) {
+            metadataContents += `\n\n### Annotations\n`;
+            for (let annotation of annotationMetadata) {
+                metadataContents += `\n - "${annotation.highlightText.trim()}" [[#Page ${annotation.page}]]`;
+                if (annotation.commentText !== '')
+                    metadataContents += ` - **${annotation.commentText}**.`;
+                else
+                metadataContents += `.`;
+            }
+            
+        }
+        metadataContents += `\n\n`;
+        await vault.append(newFile, metadataContents);
+
+
         let inBibliography : boolean = false;
 
         // Main loop through content
@@ -378,18 +380,12 @@ export class PDFContentExtractor {
         for (let j = 1; j <= pdf.numPages; j++) {
 
             const page = await pdf.getPage(j);
-            // const pageWidth = page.view.width;
-            // const pageHeight = page.view.height;
-            // const textContent = await page.getTextContent();
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
             const commonObjs = page.commonObjs._objs;
 
             let counter = 0;
             let inCode = false;
-
-            // Make this a parameter perhaps
-            const treatEOLasNewLine = false;
 
             // For highlights
             let highlightAccumulate : boolean = false;
@@ -422,8 +418,6 @@ export class PDFContentExtractor {
             let fontSize : number = 1;
             let fontScale : number = 1, lastFontScale : number = 1;
 
-            let widthLast : number = 0;
-            let spaceLineCount : number = 0;
 
             // Helper functions
             const bounds = (test:number, min:number, max:number) =>  (test >= min && test <= max);
@@ -448,10 +442,10 @@ export class PDFContentExtractor {
                 positionRunningText = new ObjectPosition(runningText, xn, yn);
                 lastFontScale = fontScale;
                 fontScale = fontSize * yScale;
-                spaceLineCount = 0;
                 newLine = false;
             };
                     
+            // Loop through operators
             for (let i = 0; i < opList.fnArray.length; i++) {
                 const fnType : any = opList.fnArray[i];
                 const args : any = opList.argsArray[i];
@@ -465,7 +459,7 @@ export class PDFContentExtractor {
                     processingText = true;
                 }
                 else if (fnType === this.pdfjs.OPS.endText) {
-                    // if (j == 1)
+                    // if (j == 3)
                     //     console.log('endText')
                     processingText = false;
                 }
@@ -475,7 +469,7 @@ export class PDFContentExtractor {
                     const font : any = commonObjs[args[0]];
                     const fontDataName = font.data.name;
                     fontSize = parseFloat(args[1]);
-                    // if (j == 1)  
+                    // if (j == 3)  
                     //     console.log('setFont', fontScale, fontSize)
                     italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1);
                     bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1);
@@ -494,8 +488,6 @@ export class PDFContentExtractor {
                     subscript = false;
                     let localFontScale = fontSize * yScale;
 
-                    // if (j == 1)
-                    //     console.log("setTextMatrix", yScale, yChange, lastFontScale, fontScale, positionRunningText)
                     // if (positionRunningText != null && (bounds(-yChange, LINE_HEIGHT_MAX, 0))) {
                     if (positionRunningText != null && 
                          (bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= xll)) {
@@ -503,11 +495,11 @@ export class PDFContentExtractor {
                         newLine = bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
                     }
                     else if (positionRunningText != null && 
-                        (x > xl &&Math.abs(yChange) < 0.5 && Math.abs(lastFontScale) > Math.abs(fontScale))) {
+                        (x > xl && Math.abs(yChange) < 0.5 && Math.abs(lastFontScale) >= Math.abs(fontScale))) {
                         // Do nothing
                         newLine = bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
                         if (!newLine && Math.abs(fontScale) > Math.abs(localFontScale)) {
-                            subscript = yChange < 0 && yChange > LINE_HEIGHT_MAX;
+                            // subscript = yChange < 0 && yChange > LINE_HEIGHT_MAX;
                             superscript = yChange > 0 && yChange < -LINE_HEIGHT_MIN;
                         }
                     }
@@ -523,6 +515,8 @@ export class PDFContentExtractor {
                             runningText = `> ${runningText}`;
                         }
                     }
+                    if (j == 3)
+                        console.log("setTextMatrix", newLine, x, xl, xll, yScale, yChange, lastFontScale, fontScale)
                     xl = xn;
                     yl = yn;
                     xll = x;
@@ -560,8 +554,8 @@ export class PDFContentExtractor {
                     }
                     xl = xn;
                     yl = yn;
-                    // if (j == 1)
-                    //     console.log("setLeadingMoveText", x, y, bounds(y, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN));
+                    if (j == 3)
+                        console.log("setLeadingMoveText", x, y, xl, yl);
 
                 }
                 else if (fnType === this.pdfjs.OPS.nextLine) {
@@ -585,14 +579,12 @@ export class PDFContentExtractor {
                     
                     if (newLine && runningText.length > 0 && !runningText.endsWith(' ') && !runningText.endsWith('\n') && bufferText.trim().length > 0) 
                         runningText += ' ';
-                    // else 
                     if (!newLine && xSpaces > runningText.length && runningText.length > 0 && !runningText.endsWith(' ')) 
                         runningText += ' '; 
 
                     if (newLine && bufferText.trim().length == 0) {
                         runningText += '\n\n';
                         bufferText = '';
-                        spaceLineCount++;
                     }
     
 
@@ -605,9 +597,9 @@ export class PDFContentExtractor {
 
                     // Apply annotations
                     let results : any = this.applyAnnotations(item, annotations, j);
-                    let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentText} = results;
-                    // if (j == 1) 
-                    //     console.log('showText', j, i, item, results, bufferText);
+                    let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = results;
+                    if (j == 3) 
+                        console.log('showText', j, i, bufferText);
                         
                     if (highlightStart) {
                         highlightAccumulate = true;
@@ -650,17 +642,18 @@ export class PDFContentExtractor {
                             highlightR, 
                             isComment, 
                             footnotes, 
+                            commentRef, 
                             commentText, 
                             highlightAccumulate, 
                             highlightAccumulator, 
                             annotationMetadata, 
                             j));
     
-                    // if (j == 1)
+                    // if (j == 3)
                     //     console.log("showText", newLine, `%${bufferText}%`, `%${runningText}%`, `@${str}@`);
     
-                    if (str.trim().length == 0) 
-                        str = '';
+                    // if (str.trim().length == 0) 
+                    //     str = '';
                     runningText += str;
                     // runningText += bufferText;
 
@@ -741,7 +734,6 @@ export class PDFContentExtractor {
 
                 }
 
-                widthLast = width;
 
             }
             if (runningText.trim() !== '') {
@@ -749,30 +741,53 @@ export class PDFContentExtractor {
                 objPositions.push(positionRunningText);
             }
 
+
+            // Sort objects first by y position, then by x position
+            /*
+            Need to handle two use cases:
+            1. Regular vertical flow (y-ordering)
+            2. Multiple columns (y-then-x ordering)
+            In the second case, consider four elements with <x,y> coordinates as follows:
+            a = { x: 100, y: 600 }
+            b = { x: 0, y: 500 }
+            c = { x: 200, y: 500 }
+            d = { x: 0, y: 300 }
+
+            y-ordering would produce: a, b, c, d
+            y-then-x ordering would produce: a, b, d, c
+            */
+            // First do y-ordering
+            objPositions = objPositions.sort((a, b) => b.y - a.y);
+            // Then get the maximum y value
+            /*
+            let maxValue = objPositions.map((obj) => obj.y).reduce((a, b) => Math.max(a, b));
             objPositions.sort((a, b) => {
                 let ax = Math.round(a.x / 100);
                 let bx = Math.round(b.x / 100);
                 let ay = Math.round(a.y);
                 let by = Math.round(b.y);
-                if (ax === bx) {
+                if (ay >= maxValue || by >= maxValue) {
                     return by - ay;
                 }
                 else
-                    return (ax - bx);
+                    return ax - bx;
             });
+            */
 
             let mdStrings = objPositions.map((pos) => { return pos.format(); });
             mdStrings.splice(0, 0, `\n\n`);
             if (settings.pdfExtractIncludePagesAsHeadings) {
-                counter++;
                 mdStrings.splice(1, 0, `---\n## Page ${j}`);
             }
             let mdString : string = mdStrings.join('\n\n');
+            // Various fixes
             mdString = mdString.replace(/(\w)\-\s(\w)/g, '$1$2');
+            mdString = mdString.replace('ﬂ ', 'ﬂ');
+            mdString = mdString.replace('ﬁ ', 'ﬁ ');
 
-            // if (j == 1) {
-            //     console.log('objPositions', objPositions);
-            // }
+            if (j == 3) {
+                console.log('objPositions', page.view, objPositions);
+            }
 
             pageCounter++;
 
@@ -844,7 +859,7 @@ export class PDFContentExtractor {
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
-                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentText} = this.applyAnnotations(item, annotations, pageCounter);
+                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = this.applyAnnotations(item, annotations, j);
                 if (highlightStart) {
                     highlightAccumulate = true;
                     highlightAccumulator = '';
@@ -856,7 +871,7 @@ export class PDFContentExtractor {
                 ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
 
                 // Handle any highlighting
-                ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, isComment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
+                ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, isComment, footnotes, commentRef, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
 
             }
 
@@ -1093,7 +1108,7 @@ export class PDFContentExtractor {
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
-                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentText} = this.applyAnnotations(item, annotations, pageCounter);
+                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = this.applyAnnotations(item, annotations, j);
                 if (highlightStart) {
                     highlightAccumulate = true;
                     highlightAccumulator = '';
@@ -1105,7 +1120,7 @@ export class PDFContentExtractor {
                 ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
 
                 // Handle any highlighting
-                ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, isComment, footnotes, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
+                ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(str, footnoteCounter, highlightStart, highlightL, highlightEnd, highlightR, isComment, footnotes, commentRef, commentText, highlightAccumulate, highlightAccumulator, annotationMetadata, pageCounter));
                         
                 let yDiff = 0;
                 let yDiff2 = 0;
@@ -1200,7 +1215,7 @@ export class PDFContentExtractor {
             }
             let mdString : string = mdStrings.join('\n\n');
 
-            // if (j == 1) {
+            // if (j == 3) {
             //     console.log('objPositions', objPositions);
             // }
 
@@ -1354,6 +1369,7 @@ export class PDFContentExtractor {
         let highlightStart = false, highlightEnd = false;
         let highlightL = 0.0, highlightR = 1.0;
         let isComment = false;
+        let commentRef = '';
         let commentText = '';
 
         let parentID = undefined;
@@ -1396,7 +1412,7 @@ export class PDFContentExtractor {
                                 isComment = true;
 
                                 if (includePageNumbersInFootnotes && commentText === '') {
-                                    commentText = `[[#Page ${pageCounter + 1}]]: `;
+                                    commentRef = `#Page ${pageCounter}`;
                                 }
 
                                 commentText += annotation.contentsObj.str;
@@ -1427,6 +1443,7 @@ export class PDFContentExtractor {
                 highlightL: highlightL, 
                 highlightR: highlightR, 
                 isComment: isComment, 
+                commentRef: commentRef, 
                 commentText: commentText };
     }
     
@@ -1445,7 +1462,7 @@ export class PDFContentExtractor {
      * @param commentText 
      * @returns 
      */
-     processHighlights(str: any, highlightStart: boolean, highlightEnd: boolean, highlightL: number, highlightR: number, comment: boolean, commentText: string, footnoteCounter: number, footnotes: Record<number, string>) {
+    processHighlights(str: any, highlightStart: boolean, highlightEnd: boolean, highlightL: number, highlightR: number, comment: boolean, commentRef: string, commentText: string, footnoteCounter: number, footnotes: Record<number, string>) {
         let highlightedText : string = '';
         if (highlightStart) {
             let sl = str.length;
@@ -1477,7 +1494,7 @@ export class PDFContentExtractor {
                 // Add the footnote marker here
                 if (comment) {
                     highlightText1 += `[^${footnoteCounter}]`;
-                    footnotes[footnoteCounter] = commentText;
+                    footnotes[footnoteCounter] = `[[${commentRef}]]: ${commentText}` ;
                     footnoteCounter++;
                 }
 
@@ -1489,9 +1506,9 @@ export class PDFContentExtractor {
     }
 
 
-    private highlightHandler(str: any, footnoteCounter: number, highlightStart: boolean, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnotes: Record<number, string>, commentText: string, highlightAccumulate: boolean, highlightAccumulator: string, annotationMetadata: any[], pageCounter: number) {
+    private highlightHandler(str: any, footnoteCounter: number, highlightStart: boolean, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnotes: Record<number, string>, commentRef: string, commentText: string, highlightAccumulate: boolean, highlightAccumulator: string, annotationMetadata: any[], pageCounter: number) {
         let highlightedText = '';
-        ({ str, highlightedText, footnoteCounter, footnotes } = this.processHighlights(str, highlightStart, highlightEnd, highlightL, highlightR, comment, commentText, footnoteCounter, footnotes));
+        ({ str, highlightedText, footnoteCounter, footnotes } = this.processHighlights(str, highlightStart, highlightEnd, highlightL, highlightR, comment, commentRef, commentText, footnoteCounter, footnotes));
         if (highlightAccumulate) {
             if (highlightedText.length > 0)
                 highlightAccumulator += highlightedText + ' ';
@@ -1546,7 +1563,7 @@ export class PDFContentExtractor {
     }
 
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement, metadata: Record<string, any>, citeproc: CiteprocFactory) {
-        
+
         // Load PdfJs
 		this.pdfjs = await loadPdfJs();
     
