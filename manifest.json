@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-topic-linking",
 	"name": "Topic Linking",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"minAppVersion": "0.12.0",
 	"description": "Convert PDF files and web links to Markdown, and create topics from Markdown",
 	"author": "Liam Magee",
