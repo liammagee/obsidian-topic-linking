@@ -754,22 +754,20 @@ export class PDFContentExtractor {
                 objPositions.push(positionRunningText);
             }
 
-
-            // Sort objects first by y position, then by x position
+            // Sort objects by x position, where a.x must be greater than b.x + b.width, then by y position.
             /*
             Need to handle two use cases:
             1. Regular vertical flow (y-ordering)
             2. Multiple columns (y-then-x ordering)
             In the second case, consider four elements with <x,y> coordinates as follows:
-            a = { x: 100, y: 600 }
-            b = { x: 0, y: 500 }
-            c = { x: 200, y: 500 }
-            d = { x: 0, y: 300 }
+            a = { x: 100, y: 600, width: 400 }
+            b = { x: 0, y: 500, width: 200 }
+            c = { x: 200, y: 500, width: 200 }
+            d = { x: 0, y: 300, width: 200 }
 
             y-ordering would produce: a, b, c, d
-            y-then-x ordering would produce: a, b, d, c
+            (x+width)-then-y ordering would produce: a, b, d, c
             */
-            // First do y-ordering
             objPositions = objPositions.sort((a, b) => {
                 let comp = 0;
                 let yDiff = b.y - a.y;
@@ -781,20 +779,7 @@ export class PDFContentExtractor {
                 comp = aComp > 0 ? aComp : (bComp > 0 ? bComp : (yDiff === 0 ? xDiff : yDiff)); 
                 return comp;
             });
-            // Then get the maximum y value
-            /*
-            objPositions.sort((a, b) => {
-                let ax = Math.round(a.x / 100);
-                let bx = Math.round(b.x / 100);
-                let ay = Math.round(a.y);
-                let by = Math.round(b.y);
-                if (ay >= maxValue || by >= maxValue) {
-                    return by - ay;
-                }
-                else
-                    return ax - bx;
-            });
-            */
+
 
             let mdStrings = objPositions.map((pos) => { return pos.format(); });
             mdStrings.splice(0, 0, `\n\n`);
@@ -807,8 +792,7 @@ export class PDFContentExtractor {
             mdString = mdString.replace('ﬂ ', 'ﬂ');
             mdString = mdString.replace('ﬁ ', 'ﬁ ');
 
-            // if (j == DEBUG_PAGE) 
-            if (j == 2) 
+            if (j == DEBUG_PAGE) 
                 console.log('objPositions', objPositions);
 
             pageCounter++;
