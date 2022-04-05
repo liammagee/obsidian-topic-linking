@@ -198,11 +198,15 @@ export class PDFContentExtractor {
         class ObjectPosition {
             x: number;
             y: number;
+            width: number; 
+            height: number;
             obj: any;
-            constructor(obj:any, x: number, y: number) {
+            constructor(obj:any, x: number, y: number, width: number, height: number) {
                 this.obj = obj;
                 this.x = x;
                 this.y = y;
+                this.width = width;
+                this.height = height;
             }
             format() {
                 let str : string = this.obj;
@@ -210,7 +214,7 @@ export class PDFContentExtractor {
                 return str;
             }
             copy() {
-                return new ObjectPosition(this.obj, this.x, this.y);
+                return new ObjectPosition(this.obj, this.x, this.y, this.width, this.height);
             }
         }
 
@@ -259,7 +263,7 @@ export class PDFContentExtractor {
                 const { dir, width, height, transform, fontName, hasEOL } = item;
                 const x = item.transform[4];
                 const y = item.transform[5];
-                const obj = new ObjectPosition(str, x, y);
+                const obj = new ObjectPosition(str, x, y, width, height);
                 
                 const pseudoKey = Math.round(j * x * y);
                 annotatedObjs[pseudoKey] = item;
@@ -363,9 +367,9 @@ export class PDFContentExtractor {
             for (let annotation of annotationMetadata) {
                 metadataContents += `\n - "${annotation.highlightText.trim()}" [[#Page ${annotation.page}]]`;
                 if (annotation.commentText !== '')
-                    metadataContents += ` - **${annotation.commentText}**.`;
+                    metadataContents += ` - **${annotation.commentText.trim()}**`;
                 else
-                metadataContents += `.`;
+                    metadataContents += `.`;
             }
             
         }
@@ -424,7 +428,7 @@ export class PDFContentExtractor {
             // Helper functions
             const bounds = (test:number, min:number, max:number) =>  (test >= min && test <= max);
 
-            const completeObject = (xn : number, yn: number) => {
+            const completeObject = (xn : number, yn: number, width: number, height: number) => {
                 if (runningText.trim() !== '') {
                     if (runningText === 'BIBLIOGRAPHY')
                         inBibliography = true;
@@ -436,12 +440,14 @@ export class PDFContentExtractor {
                     if (highlightAccumulate) 
                         runningText = `${runningText}==`;
                     positionRunningText.obj = runningText;
+                    positionRunningText.width = width;
+                    positionRunningText.height = height - positionRunningText.x;
                     objPositions.push(positionRunningText);
                     runningText = '';
                     if (highlightAccumulate) 
                         runningText = `==${runningText}`;
                 }
-                positionRunningText = new ObjectPosition(runningText, xn, yn);
+                positionRunningText = new ObjectPosition(runningText, xn, yn, 0, 0);
                 lastFontScale = fontScale;
                 fontScale = fontSize * yScale;
                 newLine = false;
@@ -506,7 +512,7 @@ export class PDFContentExtractor {
                         }
                     }
                     else {
-                        completeObject(xn, yn);
+                        completeObject(xn, yn, width, yl);
 
                         let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
                         let xmin : number = Math.round(xn - Math.abs(fontScale) * 5);
@@ -552,7 +558,7 @@ export class PDFContentExtractor {
                         // Do not create a new object
                     }
                     else {
-                        completeObject(xn, yn);
+                        completeObject(xn, yn, width, yl);
                     }
                     xl = xn;
                     yl = yn;
@@ -671,13 +677,14 @@ export class PDFContentExtractor {
                     const x : number = args[4];
                     const y : number = args[5];
                     const yAdj : number = y + yScale;
-                    positionImg = new ObjectPosition(null, x, yAdj);
+                    positionImg = new ObjectPosition(null, x, yAdj, 0, 0);
                 }
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
                     let img = page.objs.get(args[0])
                     // Convert and save image to a PNG
                     if (img != null) { 
+                        
                         let bn = '';
                         if (file !== null)
                             bn = file.basename;
@@ -688,6 +695,8 @@ export class PDFContentExtractor {
                             const md = `![${imageName}](${imagePath})`;
                             imagePaths[displayCounter] = md;
                             
+                            positionImg.width = img.width;
+                            positionImg.height = img.height;
                             positionImg.obj = md;
                             objPositions.push(positionImg);
     
@@ -761,10 +770,19 @@ export class PDFContentExtractor {
             y-then-x ordering would produce: a, b, d, c
             */
             // First do y-ordering
-            objPositions = objPositions.sort((a, b) => b.y - a.y);
+            objPositions = objPositions.sort((a, b) => {
+                let comp = 0;
+                let yDiff = b.y - a.y;
+                let xDiff = a.x - b.x;
+                let axExtent = a.x + a.width;
+                let bxExtent = b.x + b.width;
+                let aComp = a.x - bxExtent;
+                let bComp = b.x - axExtent;
+                comp = aComp > 0 ? aComp : (bComp > 0 ? bComp : (yDiff === 0 ? xDiff : yDiff)); 
+                return comp;
+            });
             // Then get the maximum y value
             /*
-            let maxValue = objPositions.map((obj) => obj.y).reduce((a, b) => Math.max(a, b));
             objPositions.sort((a, b) => {
                 let ax = Math.round(a.x / 100);
                 let bx = Math.round(b.x / 100);
@@ -789,7 +807,8 @@ export class PDFContentExtractor {
             mdString = mdString.replace('ﬂ ', 'ﬂ');
             mdString = mdString.replace('ﬁ ', 'ﬁ ');
 
-            if (j == DEBUG_PAGE) 
+            // if (j == DEBUG_PAGE) 
+            if (j == 2) 
                 console.log('objPositions', objPositions);
 
             pageCounter++;
