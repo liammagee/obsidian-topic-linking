@@ -44,10 +44,9 @@ class CiteprocWrapper {
     }
 
     getStyles() {
-        return {}
-        // return import("../build/styles-common").then(
-        //     (styles:any) => styles.styles
-        // )
+        return import("../build/styles-common").then(
+            (styles:any) => styles.styles
+        )
     }
 
     async getEngine(originalSys:any, styleId:any, lang:string, forceLang:boolean) {
