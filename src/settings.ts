@@ -24,6 +24,7 @@ export interface TopicLinkingSettings {
     citeprocStyleId: string;
     citeprocLang: string;
     citeprocForceLang: boolean;
+    bibliographyPath: string;
 
     bookmarkPath: string;
     bookmarkOverwrite: boolean;
@@ -66,6 +67,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     citeprocStyleId: 'apa',
     citeprocLang: 'en-US',
     citeprocForceLang: false,
+    bibliographyPath: 'Bibliography/',
 
     bookmarkPath: 'Bookmarks/',
     bookmarkOverwrite: false,
@@ -270,6 +272,17 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.citeprocForceLang)
                     .onChange(async (value) => {
                         this.plugin.settings.citeprocForceLang = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Bibliography Path')
+            .setDesc('Where to output the bibliography.')
+            .addText((text) => {
+                text.setPlaceholder('Bibliography/')
+                    .setValue(this.plugin.settings.bibliographyPath.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.bibliographyPath = value;
                         await this.plugin.saveSettings();
                     });
             });

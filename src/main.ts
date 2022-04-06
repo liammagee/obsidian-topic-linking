@@ -28,8 +28,7 @@ export default class TopicLinkingPlugin extends Plugin {
         }
         let factory = new CiteprocFactory();
         await factory.initEngine(metadataCSL, this.settings);
-        let styles = await factory.wrapper.getStyles();
-        console.log(styles)
+        const styles = await factory.wrapper.getStyles();
 
         // This command extracts PDFs to Markdown
         this.addCommand({
@@ -58,11 +57,29 @@ export default class TopicLinkingPlugin extends Plugin {
 
                 const { vault } = this.app;
 
-                const keys = Object.keys(metadataBibtex);
+                const bibliographyPath = this.settings.bibliographyPath.trim();
+
+                // Reload the CSL engine, in case the metadata has updated
+                let metadataBibtex : any = {}, metadataCSL = {};
+                let bibtexParser = new BibtexParser();
+                if (this.settings.bibtexPath.trim() !== '') {
+                    metadataBibtex = await bibtexParser.parseBibtexJSON(this.app, this.settings);
+                    metadataCSL = bibtexParser.convertToCSLJSON(metadataBibtex);
+                }
+                let factory = new CiteprocFactory();
+                await factory.initEngine(metadataCSL, this.settings);
+        
+                // Remove old bibliography entries
+                vault.getFiles().filter((file) => file.path.startsWith(this.settings.bibliographyPath) ).forEach(async (file) => {
+                    await vault.delete(file);
+                });
+                
+
+                const keysSorted = Object.keys(metadataBibtex).sort();
                 let bibliography = '# Bibliography\n\n';
-                for (let key in metadataBibtex) {
+                for (let key of keysSorted) {
                     let itemMetaBibtex = metadataBibtex[key];
-                    let itemMetaCSL = metadataBibtex[key];
+                    // let itemMetaCSL = metadataBibtex[key];
                     let bibtex = '---';
                     bibtex += formatBibtexAsMetadata(itemMetaBibtex);
                     bibtex += '\n---\n';
@@ -70,9 +87,11 @@ export default class TopicLinkingPlugin extends Plugin {
                     bibtex += bib;
                     bibtex += `\n[Open in Zotero](${itemMetaBibtex.select})`;
 
-                    bibliography += `[[${key}]]\n`;
-                    bibliography += `${bib}\n\n`;
-                    const fileName: string = normalizePath(`Bibliography/${key}.md`);
+                    // bibliography += `[[${key}]]\n`;
+                    bibliography += `${bib}`;
+                    bibliography += ' [link](${key})';
+                    bibliography += '\n';
+                    const fileName: string = normalizePath(`${bibliographyPath}${key}.md`);
                     const newFile = <TFile> vault.getAbstractFileByPath(fileName);
                     if (newFile !== null)
                         await vault.modify(newFile, bibtex);
@@ -80,7 +99,7 @@ export default class TopicLinkingPlugin extends Plugin {
                         await vault.create(fileName, bibtex);
                 }   
 
-                const bibFileName: string = normalizePath(`Bibliography/bibliography.md`);
+                const bibFileName: string = normalizePath(`${bibliographyPath}bibliography.md`);
                 const bibFile = <TFile> vault.getAbstractFileByPath(bibFileName);
                 if (bibFile !== null)
                     await vault.modify(bibFile, bibliography);

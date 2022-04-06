@@ -87,8 +87,8 @@ class CiteprocWrapper {
             return Promise.resolve()
         }
         return import("citeproc").then(
-            (citeprocModule:any) => {
-                this.citeproc = citeprocModule.default
+            (citeprocModule:any) => {;
+                this.citeproc = citeprocModule.default;
             }
         )
     }
@@ -122,13 +122,7 @@ class CiteprocWrapper {
                     returnValue = Promise.resolve(this.styles[styleLocations[styleId]][styleId])
                 }
                 return returnValue
-    
-                //     console.log("Loading style: ", styleLocations, styleId, styleLocations[styleId], styleLocations[styleId][styleId])
-                // if (!this.styles[styleLocations[styleId]]) 
-                //     this.styles[styleLocations[styleId]] = styleLocations[styleId]
 
-                // this.styles[styleLocations[styleId]][styleId] = inflateCSLObj(this.styles[styleLocations[styleId]][styleId])
-                // return Promise.resolve(this.styles[styleLocations[styleId]][styleId]);
             }
         )
     }

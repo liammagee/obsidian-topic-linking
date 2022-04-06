@@ -8,9 +8,15 @@ export class BibtexParser {
 
     async loadJSON(app: App, settings: TopicLinkingSettings) {
         const bibtexPath = settings.bibtexPath.trim();
-        const bibtexFile = <TFile>app.vault.getAbstractFileByPath(bibtexPath);
-        const buffer = await app.vault.read(bibtexFile);
-		return JSON.parse(buffer.toString()); 
+        try{
+            const bibtexFile = <TFile>app.vault.getAbstractFileByPath(bibtexPath);
+            const buffer = await app.vault.read(bibtexFile);
+            return JSON.parse(buffer.toString()); 
+        }
+        catch(e) {
+            console.log(e);
+            return { items: [] };
+        }
     }
 
 
