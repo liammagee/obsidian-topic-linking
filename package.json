@@ -18,11 +18,12 @@
 	"devDependencies": {
 		"@types/micromatch": "^4.0.2",
 		"@types/node": "^16.11.6",
+		"@types/nunjucks": "^3.2.1",
 		"@typescript-eslint/eslint-plugin": "^5.2.0",
 		"@typescript-eslint/parser": "^5.2.0",
 		"builtin-modules": "^3.2.0",
 		"esbuild": "0.13.12",
-		"obsidian": "^0.14.5",
+		"obsidian": "^0.14.1",
 		"tslib": "2.3.1",
 		"typescript": "4.4.4"
 	},
@@ -39,8 +40,9 @@
 		"citeproc": "^2.4.62",
 		"fast-png": "^6.1.0",
 		"micromatch": "^4.0.4",
+		"nunjucks": "^3.2.3",
 		"pdfjs": "^2.4.7",
 		"sanitize-filename": "^1.6.3",
-		"stdlib": "^0.6.0"
+		"stdlib": "^0.1.0"
 	}
 }

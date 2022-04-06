@@ -94,7 +94,7 @@ export function formatBibtexAsMetadata(item:any) {
     if (item.extra) 
         metadataContents += `\nPublisher: "${item.extra}"`;
     if (item.publicationTitle) 
-        metadataContents += `\nPublisher: "${item.publicationTitle}"`;
+        metadataContents += `\nPublication: "${item.publicationTitle}"`;
     if (item.volume) 
         metadataContents += `\nVolume: "${item.volume}"`;
     if (item.issue) 

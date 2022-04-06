@@ -7,6 +7,7 @@ import { TopicLinkingSettings } from './settings';
 import { CiteprocFactory } from './citeproc';
 import { formatBibtexAsMetadata } from './bibtex';
 import { encode } from 'fast-png';
+import nunjucks from 'nunjucks';
 
 // From pdf.js src/shared/utils.js
 const ImageKind = {
@@ -91,7 +92,7 @@ export class PDFContentExtractor {
      * @param file 
      * @param fileCounter 
      */
-    processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
+    processPDF = async (vault: Vault, settings: TopicLinkingSettings, template: any, file : TFile, fileCounter : number) => {
 
         const buffer = await vault.readBinary(file);
         let pdf = null;
@@ -114,7 +115,7 @@ export class PDFContentExtractor {
         else 
             newFile = await vault.create(fileName, '');
 
-        
+
         // ANNOTATION DATA
         // For footnotes
         let footnoteCounter = 1;
@@ -228,28 +229,36 @@ export class PDFContentExtractor {
 
         // Append the metadata
         let metadataContents = ``;
+        let itemMeta: any = {};
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
-            const itemMeta = this.metadata[file.basename];
-            metadataContents += `---`;
-            metadataContents += formatBibtexAsMetadata(itemMeta);
-            metadataContents += `\n---`;
-            const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
-            metadataContents += `\n${bib}`;
-            metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
+            itemMeta = this.metadata[file.basename];
+            itemMeta.bib = this.citeproc.makeBibliography([itemMeta.citationKey]);
+            itemMeta.authors = itemMeta.creators.map((creator:any) => creator.lastName + ', ' + creator.firstName).join('; ')
         }
-        metadataContents += `\nSource: [[${file.path}]]`;
-        if (annotationMetadata.length > 0) {
-            metadataContents += `\n\n### Annotations\n`;
-            for (let annotation of annotationMetadata) {
-                metadataContents += `\n - "${annotation.highlightText.trim()}" [[#Page ${annotation.page}]]`;
-                if (annotation.commentText !== '')
-                    metadataContents += ` - **${annotation.commentText.trim()}**`;
-                else
-                    metadataContents += `.`;
-            }
+        // if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
+        //     const itemMeta = this.metadata[file.basename];
+        //     metadataContents += `---`;
+        //     metadataContents += formatBibtexAsMetadata(itemMeta);
+        //     metadataContents += `\n---`;
+        //     const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
+        //     metadataContents += `\n${bib}`;
+        //     metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
+        // }
+        // metadataContents += `\nSource: [[${file.path}]]`;
+        // if (annotationMetadata.length > 0) {
+        //     metadataContents += `\n\n### Annotations\n`;
+        //     for (let annotation of annotationMetadata) {
+        //         metadataContents += `\n - "${annotation.highlightText.trim()}" [[#Page ${annotation.page}]]`;
+        //         if (annotation.commentText !== '')
+        //             metadataContents += ` - **${annotation.commentText.trim()}**`;
+        //         else
+        //             metadataContents += `.`;
+        //     }
             
-        }
-        metadataContents += `\n\n`;
+        // }
+        // metadataContents += `\n\n`;
+        let res = nunjucks.renderString(template, { filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata });
+        metadataContents += res;
         // Append metadata, both any bibtex content and annotations
         await vault.append(newFile, metadataContents);
 
@@ -681,8 +690,6 @@ export class PDFContentExtractor {
             // Release page resources.
             page.cleanup();
 
-            // let markdownContents = markdownStrings.join('');
-            // await vault.append(newFile, markdownStrings.join(''));
             await vault.append(newFile, mdString);
 
         }
@@ -923,6 +930,12 @@ export class PDFContentExtractor {
         console.log(`Chunk if file exceeds limit: ${chunkIfFileExceedsLimit}`);
         console.log(`Overwrite exising files: ${pdfOverwrite}`);
 
+        // TEST TEMPLATES
+        const md = require('./pdf-metadata.md');
+        const template = md.default;
+        var env = new nunjucks.Environment();
+        var tmpl = new nunjucks.Template(template, env);
+
         // Obtain a set of PDF files - don't include those that have already been generated
         let files: TFile[] = vault.getFiles().filter((file) => {
             let matches = false;
@@ -959,7 +972,7 @@ export class PDFContentExtractor {
 
         let index = 0;
         for (let file of files) {
-            await this.processPDF(vault, settings, file, index++);
+            await this.processPDF(vault, settings, template, file, index++);
         }
 
         statusBarItemEl.setText('All done!');
