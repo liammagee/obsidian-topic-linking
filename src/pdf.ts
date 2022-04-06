@@ -676,16 +676,18 @@ export class PDFContentExtractor {
                 }
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
-                    let img = page.objs.get(args[0])
-                    // Convert and save image to a PNG
-                    if (img != null) { 
-                        
-                        let bn = '';
-                        if (file !== null)
-                            bn = file.basename;
-                        const imageName = `${bn}_${j}_${i+1}`.replace(/\s+/g, '');
-                        const imagePath = normalizePath(`${this.generatedPath}${imageName}.png`);
-                        try {
+
+                    try {
+
+                        let img = page.objs.get(args[0])
+                        // Convert and save image to a PNG
+                        if (img != null) { 
+                            
+                            let bn = '';
+                            if (file !== null)
+                                bn = file.basename;
+                            const imageName = `${bn}_${j}_${i+1}`.replace(/\s+/g, '');
+                            const imagePath = normalizePath(`${this.generatedPath}${imageName}.png`);
                             const imageFile = <TFile> vault.getAbstractFileByPath(imagePath);
                             const md = `![${imageName}](${imagePath})`;
                             imagePaths[displayCounter] = md;
@@ -694,13 +696,13 @@ export class PDFContentExtractor {
                             positionImg.height = img.height;
                             positionImg.obj = md;
                             objPositions.push(positionImg);
-    
+
                             displayCounter++;
                             if (imageFile != null)
                                 continue;
                                 // For the moment, don't overwrite images - skip the following logic
                                 // await vault.delete(imageFile);
-    
+
                             let imgDataNew : number[] = [];
                             const imgSize : number = img.data.length;
                             if (img.kind === ImageKind.GRAYSCALE_1BPP) {
@@ -729,20 +731,17 @@ export class PDFContentExtractor {
                                     imgDataNew[k] = img.data[k];
                                 }
                             }
-    
+
                             const buffer = Buffer.from(imgDataNew);
                             const pngInput = { data: buffer, width: img.width, height: img.height };
                             const png = await encode(pngInput);
                             await vault.createBinary(imagePath, png);
                         }
-                        catch (e) {
-                            console.log(`Failed to process image in ${file.basename}. Error: ${e}.`);
-                        }
                     }
-
+                    catch (e) {
+                        console.log(`Failed to process image in ${file.basename}. Error: ${e}.`);
+                    }
                 }
-
-
             }
             if (runningText.trim() !== '') {
                 positionRunningText.obj = runningText;
