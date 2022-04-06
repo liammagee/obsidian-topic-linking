@@ -16,6 +16,11 @@ const ImageKind = {
 };
 const DEBUG_PAGE : number = 0;
 
+// Constants for detecting line change
+// Work on a way to calculate this dynamically for double-spaced texts
+const LINE_HEIGHT_MIN = -1.0;
+const LINE_HEIGHT_MAX = -1.5;
+
 
 class PDFObjectPosition {
     x: number;
@@ -280,9 +285,6 @@ export class PDFContentExtractor {
             let displayCounter : number = 0;
             let imagePaths : Record<number, string> = [];
 
-            const LINE_HEIGHT_MIN = -1.0;
-            const LINE_HEIGHT_MAX = -1.5;
-
             let objPositions : PDFObjectPosition[] = [];
             let runningText : string = '';
             let positionRunningText : PDFObjectPosition = null;
@@ -290,7 +292,9 @@ export class PDFContentExtractor {
             
             let processingText : boolean = false;
 
-            let xScale : number = 0, yScale : number = 0;
+            // Coordinate variables
+            // Set scale to 1 by default (in case setTextMatrix is not called)
+            let xScale : number = 1, yScale : number = 1;
             let xSpaces : number = 0;
             let xl = 0, yl = 0;
             let xOffset = 0, yOffset = 0;
@@ -367,24 +371,26 @@ export class PDFContentExtractor {
                     const x : number = args[4];
                     const y : number = args[5];
                     let xn :number = x;// * xScale * fontSize;
-                    let yn :number = y * Math.sign(yScale);
+                    let ySign = Math.sign(yScale);
+                    let yn :number = y * ySign;
                     let xChange : number = xn - (xl + width);
-                    let yChange : number = (yn - yl ) / (fontScale);
+                    let yChange : number = (yn - yl) / (fontScale * ySign);
                     newLine = false;
                     superscript = false;
                     subscript = false;
                     let localFontScale = fontSize * yScale;
+                    let completedObject = false;
 
                     // if (positionRunningText != null && (bounds(-yChange, LINE_HEIGHT_MAX, 0))) {
                     if (positionRunningText != null && 
-                         (bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= xll)) {
+                         (bounds(yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= xll)) {
                         // Do nothing
-                        newLine = bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
+                        newLine = bounds(yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
                     }
                     else if (positionRunningText != null && 
                         (x > xl && Math.abs(yChange) < 0.5 && Math.abs(lastFontScale) >= Math.abs(fontScale))) {
                         // Do nothing
-                        newLine = bounds(-yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
+                        newLine = bounds(yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN);// && xChange <= 0;
                         if (!newLine && Math.abs(fontScale) > Math.abs(localFontScale)) {
                             // subscript = yChange < 0 && yChange > LINE_HEIGHT_MAX;
                             superscript = yChange > 0 && yChange < -LINE_HEIGHT_MIN;
@@ -392,6 +398,7 @@ export class PDFContentExtractor {
                     }
                     else {
                         completeObject(xn, yn, width, yl);
+                        completedObject = true;
 
                         let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
                         let xmin : number = Math.round(xn - Math.abs(fontScale) * 5);
@@ -403,7 +410,7 @@ export class PDFContentExtractor {
                         }
                     }
                     if (j == DEBUG_PAGE)
-                        console.log("setTextMatrix", newLine, x, xl, xll, yScale, yChange, lastFontScale, fontScale)
+                        console.log("setTextMatrix", completedObject, bounds(yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN), x, xl, xll, yn, yl, yScale, yChange, lastFontScale, fontScale, positionRunningText)
                     xl = xn;
                     yl = yn;
                     xll = x;
@@ -415,14 +422,15 @@ export class PDFContentExtractor {
                     yOffset = y * fontScale;
                     let xn :number = xl + xOffset;
                     let yn :number = yl + yOffset;
+                    let yChange : number = (yn - yl ) / (fontScale);
                     newLine = false;
                     // Review these conditions:
                     // 1. Next line, normal text
                     // 2. Next line, inside bibliography
                     // 3. Same line
                     if (!inBibliography && 
-                        ((bounds(y, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= 0) || 
-                            (Math.abs(y) < 0.1))) {
+                        ((bounds(yChange, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN) && x <= 0) || 
+                            (Math.abs(yChange) < 0.1))) {
                         newLine = (bounds(y, LINE_HEIGHT_MAX, LINE_HEIGHT_MIN));
                         xSpaces = Math.abs(xn - xl) / fontScale;
                         // Do not create a new object
@@ -439,10 +447,10 @@ export class PDFContentExtractor {
                     else {
                         completeObject(xn, yn, width, yl);
                     }
+                    if (j == DEBUG_PAGE)
+                        console.log("setLeadingMoveText", yChange, fontScale, x, y, xl, yl, xn, yn);
                     xl = xn;
                     yl = yn;
-                    if (j == DEBUG_PAGE)
-                        console.log("setLeadingMoveText", x, y, xl, yl);
 
                 }
                 else if (fnType === this.pdfjs.OPS.nextLine) {
@@ -460,10 +468,11 @@ export class PDFContentExtractor {
                                 bufferText += ' ';
                         }
                     }
-                    
+
+                    // Rules for new lines
                     if (runningText.length == 0 && bufferText.trim().length == 0) 
                         bufferText = '';
-                    
+
                     if (newLine && runningText.length > 0 && !runningText.endsWith(' ') && !runningText.endsWith('\n') && bufferText.trim().length > 0) 
                         runningText += ' ';
                     if (!newLine && xSpaces > runningText.length && runningText.length > 0 && !runningText.endsWith(' ')) 
@@ -473,6 +482,18 @@ export class PDFContentExtractor {
                         runningText += '\n\n';
                         bufferText = '';
                     }
+
+                    // Complicated logic for handling hyphens at end-of-line. Looks to work,
+                    // but could break in some circumstances
+                    if (newLine && runningText.endsWith('-')) 
+                        runningText = runningText.substring(0, runningText.length - 1);
+                    else if (newLine && runningText.endsWith('- ')) 
+                        runningText = runningText.substring(0, runningText.length - 2);
+                    else if (bufferText.endsWith('- '))
+                        bufferText = bufferText.substring(0, bufferText.length - 1);
+                    if (j == DEBUG_PAGE) 
+                        console.log('showText', newLine, j, i, bufferText, runningText);
+
     
 
                     if (width === undefined)
@@ -485,8 +506,6 @@ export class PDFContentExtractor {
                     // Apply annotations
                     let results : any = this.applyAnnotations(item, annotations, j);
                     let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = results;
-                    if (j == DEBUG_PAGE) 
-                        console.log('showText', j, i, bufferText);
                         
                     if (highlightStart) {
                         highlightAccumulate = true;
@@ -543,6 +562,7 @@ export class PDFContentExtractor {
                     // Causes problems. Remove when safe to do so.
                     // if (str.trim().length == 0) 
                     //     str = '';
+
 
                     runningText += str;
                     // runningText += bufferText;
@@ -667,7 +687,7 @@ export class PDFContentExtractor {
             }
             let mdString : string = mdStrings.join('\n\n');
             // Various fixes
-            mdString = mdString.replace(/(\w)\-\s(\w)/g, '$1$2');
+            // mdString = mdString.replace(/(\w)\-\s(\w)/g, '$1$2');
             mdString = mdString.replace('ﬂ ', 'ﬂ');
             mdString = mdString.replace('ﬁ ', 'ﬁ ');
 
