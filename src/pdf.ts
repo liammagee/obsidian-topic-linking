@@ -164,9 +164,8 @@ export class PDFContentExtractor {
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
-                let result = this.applyAnnotations(item, annotations, j);
-                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = result;
-                if (highlightStart) {
+                let itemHighlights = this.applyAnnotations(item, annotations, j);
+                if (itemHighlights.highlightStart) {
                     highlightAccumulate = true;
                     highlightAccumulator = '';
                 }
@@ -174,15 +173,9 @@ export class PDFContentExtractor {
                 // Handle any highlighting
                 ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(
                                                         str, 
+                                                        itemHighlights,
                                                         footnoteCounter, 
-                                                        highlightStart, 
-                                                        highlightL, 
-                                                        highlightEnd, 
-                                                        highlightR, 
-                                                        isComment, 
                                                         footnotes, 
-                                                        commentRef, 
-                                                        commentText, 
                                                         highlightAccumulate, 
                                                         highlightAccumulator, 
                                                         annotationMetadata, 
@@ -491,8 +484,8 @@ export class PDFContentExtractor {
                         runningText = runningText.substring(0, runningText.length - 2);
                     else if (bufferText.endsWith('- '))
                         bufferText = bufferText.substring(0, bufferText.length - 1);
-                    if (j == DEBUG_PAGE) 
-                        console.log('showText', newLine, j, i, bufferText, runningText);
+                    // if (j == DEBUG_PAGE) 
+                    //     console.log('showText', newLine, j, i, bufferText);
 
     
 
@@ -504,14 +497,11 @@ export class PDFContentExtractor {
                     let item : any = { width: width, height: height, transform: transform, text: bufferText };
 
                     // Apply annotations
-                    let results : any = this.applyAnnotations(item, annotations, j);
-                    let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = results;
-                        
-                    if (highlightStart) {
+                    let itemHighlights : any = this.applyAnnotations(item, annotations, j);
+                    if (itemHighlights.highlightStart) {
                         highlightAccumulate = true;
                         highlightAccumulator = '';
                     }
-    
     
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
@@ -539,18 +529,12 @@ export class PDFContentExtractor {
 
 
                     // Handle any highlighting
-                    let str = bufferText;
+                    let str = '';
                     ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(
                             bufferText, 
+                            itemHighlights,
                             footnoteCounter, 
-                            highlightStart, 
-                            highlightL, 
-                            highlightEnd, 
-                            highlightR, 
-                            isComment, 
                             footnotes, 
-                            commentRef, 
-                            commentText, 
                             highlightAccumulate, 
                             highlightAccumulator, 
                             annotationMetadata, 
@@ -850,7 +834,14 @@ export class PDFContentExtractor {
      * @param commentText 
      * @returns 
      */
-    processHighlights(str: any, highlightStart: boolean, highlightEnd: boolean, highlightL: number, highlightR: number, comment: boolean, commentRef: string, commentText: string, footnoteCounter: number, footnotes: Record<number, string>) {
+    processHighlights(str: any, itemHighlights: any, footnoteCounter: number, footnotes: Record<number, string>) {
+        let {highlightStart, 
+            highlightEnd, 
+            highlightL, 
+            highlightR, 
+            isComment, 
+            commentRef, 
+            commentText} = itemHighlights;
         let highlightedText : string = '';
         if (highlightStart) {
             let sl = str.length;
@@ -880,7 +871,7 @@ export class PDFContentExtractor {
                 let highlightText2 = str.substr(hr);
 
                 // Add the footnote marker here
-                if (comment) {
+                if (isComment) {
                     highlightText1 += `[^${footnoteCounter}]`;
                     footnotes[footnoteCounter] = `[[${commentRef}]]: ${commentText}` ;
                     footnoteCounter++;
@@ -894,9 +885,9 @@ export class PDFContentExtractor {
     }
 
 
-    private highlightHandler(str: any, footnoteCounter: number, highlightStart: boolean, highlightL: number, highlightEnd: boolean, highlightR: number, comment: boolean, footnotes: Record<number, string>, commentRef: string, commentText: string, highlightAccumulate: boolean, highlightAccumulator: string, annotationMetadata: any[], pageCounter: number) {
+    private highlightHandler(str: any, itemHighlights : any, footnoteCounter: number, footnotes: Record<number, string>, highlightAccumulate: boolean, highlightAccumulator: string, annotationMetadata: any[], pageCounter: number) {
         let highlightedText = '';
-        ({ str, highlightedText, footnoteCounter, footnotes } = this.processHighlights(str, highlightStart, highlightEnd, highlightL, highlightR, comment, commentRef, commentText, footnoteCounter, footnotes));
+        ({ str, highlightedText, footnoteCounter, footnotes } = this.processHighlights(str, itemHighlights, footnoteCounter, footnotes));
         if (highlightAccumulate) {
             if (highlightedText.length > 0)
                 highlightAccumulator += highlightedText + ' ';
@@ -904,8 +895,8 @@ export class PDFContentExtractor {
             else
                 highlightAccumulator += str + ' ';
         }
-        if (highlightEnd) {
-            annotationMetadata.push({ highlightText: highlightAccumulator, page: pageCounter, commentText: commentText });
+        if (itemHighlights.highlightEnd) {
+            annotationMetadata.push({ highlightText: highlightAccumulator, page: pageCounter, commentText: itemHighlights.commentText });
             highlightAccumulate = false;
         }
         return { str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata };
