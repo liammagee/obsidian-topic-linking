@@ -7,16 +7,38 @@ import { TopicLinkingSettings } from './settings';
 import { CiteprocFactory } from './citeproc';
 import { formatBibtexAsMetadata } from './bibtex';
 import { encode } from 'fast-png';
-import datasets from '@stdlib/datasets/docs/types';
 
 // From pdf.js src/shared/utils.js
 const ImageKind = {
     GRAYSCALE_1BPP: 1,
     RGB_24BPP: 2,
     RGBA_32BPP: 3
-  };
-
+};
 const DEBUG_PAGE : number = 0;
+
+
+class PDFObjectPosition {
+    x: number;
+    y: number;
+    width: number; 
+    height: number;
+    obj: any;
+    constructor(obj:any, x: number, y: number, width: number, height: number) {
+        this.obj = obj;
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+    }
+    format() {
+        let str : string = this.obj;
+        str = str.trimStart();
+        return str;
+    }
+    copy() {
+        return new PDFObjectPosition(this.obj, this.x, this.y, this.width, this.height);
+    }
+}
 
 export class PDFContentExtractor {
     pdfjs: any;
@@ -58,114 +80,6 @@ export class PDFContentExtractor {
         });
     };
 
-    
-    /**
-     * Taken (and inverted) from https://stackoverflow.com/questions/7033639/split-large-string-in-n-size-chunks-in-javascript/29202760#29202760
-     * @param str
-     * @param size 
-     * @returns 
-     */
-    chunkSubstring = (str : string, num : number) => {
-        const sizeChunks = Math.ceil(str.length / num);
-        const chunks = new Array(num);
-        
-        for (let i = 0, o = 0; i < num; ++i, o += sizeChunks) {
-            chunks[i] = str.substring(o, o+sizeChunks);
-        }
-        
-        return chunks;
-    }
-
-
-    /**
-     * Calculate mean text height across all pages. Used to determine if a given text block is a heading (if its text height is 
-     * well above the mean).
-     * @param pages of the PDF file
-     */
-    // calculateMeanTextHeight = (pages: Array<any>) => {
-    calculateMeanTextHeight = async (pdf: any) => {
-        let minH = -1, maxH = -1, totalH = 0, counterH = 0;
-        for (let j = 0; j < pdf.numPages; j++) {
-            const page = await pdf.getPage(j + 1);
-            const textContent = await page.getTextContent();
-            textContent.items.forEach((item:any) => {
-                const { str, height } = item;
-                if (str.trim().length > 0) {
-                    if (height > maxH)
-                        maxH = height;
-                    if (height < minH || minH == -1)
-                        minH = height;
-                    totalH += height;
-                    counterH++;
-                }
-            });
-
-            // Release page resources.
-            page.cleanup();
-
-        }
-
-        return totalH / counterH;
-    };
-
-    /**
-     * Extracts text from a PDF file.
-     */
-     getContent = async (vault: Vault, file : TFile, counter : number) => {
-
-        const pages : any[] = [];
-        try {
-
-            const buffer = await vault.readBinary(file);
-            const pdf = await this.pdfjs.getDocument(buffer).promise;
-            console.log(`Loading file num ${counter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
-            for (let i = 0; i < pdf.numPages; i++) {
-                const page = await pdf.getPage(i + 1);
-                const textContent = await page.getTextContent();
-                const opList = await page.getOperatorList();
-                const annotations = await page.getAnnotations();
-                const commonObjs = page.commonObjs._objs;
-                const objs = page.objs;
-
-                for (let j = 0; j < opList.fnArray.length; j++) {
-                    if (opList.fnArray[j] === this.pdfjs.OPS.paintImageXObject) {
-                        let img : any = page.objs.get(opList.argsArray[j][0])
-                        // Convert and save image to a PNG
-                        if (img.kind === ImageKind.RGB_24BPP) { 
-                            const imgSize : number = img.data.length;
-                            const imgSizeNew = imgSize / 3 * 4;
-                            let imgDataNew : number[] = new Array<number>(imgSizeNew);
-                            for (let k = 0, l = 0; k < imgSize; k++, l++) {
-                                imgDataNew[l] = img.data[k];
-                                if (k % 3 == 2) {
-                                    imgDataNew[(l++)+1] = 255;
-                                }
-                            }
-                            const buffer = Buffer.from(imgDataNew);
-                            const pngInput = { data: buffer, width: img.width, height: img.height };
-                            const png = await encode(pngInput);
-                            let bn = '';
-                            if (file !== null)
-                                bn = file.basename;
-                            const imagePath = normalizePath(`${this.generatedPath}${bn}_${i+1}_${j+1}.png`);
-                            const imageFile = <TFile> vault.getAbstractFileByPath(imagePath);
-                            if (imageFile != null) 
-                                await vault.delete(imageFile);
-                            await vault.createBinary(imagePath, png);
-                        }
-                    }
-                }
-    
-                pages.push( { textContent: textContent, opList: opList, commonObjs: commonObjs, annotations: annotations } );
-                // Release page resources.
-                page.cleanup();
-            }
-        }
-        catch (err) {
-            console.log(`Error ${err} loading ${file.path}.`)
-        }
-        return pages;
-    }
 
     /**
      * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
@@ -174,7 +88,6 @@ export class PDFContentExtractor {
      */
     processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
 
-        // const pages: Array<any> = await this.getContent(vault, file, fileCounter);
         const buffer = await vault.readBinary(file);
         let pdf = null;
         try {
@@ -187,6 +100,7 @@ export class PDFContentExtractor {
         
         console.log(`Loading file num ${fileCounter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
 
+        // Create a Markdown file for output
         const subPath = this.subPathFactory(file, this.pdfPath.length);
         const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
         let newFile = <TFile> vault.getAbstractFileByPath(fileName);
@@ -195,29 +109,6 @@ export class PDFContentExtractor {
         else 
             newFile = await vault.create(fileName, '');
 
-        class ObjectPosition {
-            x: number;
-            y: number;
-            width: number; 
-            height: number;
-            obj: any;
-            constructor(obj:any, x: number, y: number, width: number, height: number) {
-                this.obj = obj;
-                this.x = x;
-                this.y = y;
-                this.width = width;
-                this.height = height;
-            }
-            format() {
-                let str : string = this.obj;
-                str = str.trimStart();
-                return str;
-            }
-            copy() {
-                return new ObjectPosition(this.obj, this.x, this.y, this.width, this.height);
-            }
-        }
-
         
         // ANNOTATION DATA
         // For footnotes
@@ -225,12 +116,9 @@ export class PDFContentExtractor {
         let footnotes : Record<number, string> = {};
         // For annotation metadata
         let annotationMetadata : any[] = [];
-
-        let pageCounter = 0;
         let annotatedObjs : any = {};
 
-
-        pageCounter = 0;
+        // For margins
         let leftMarginsOdd : Record<number, number> = {},
             leftMarginsEven : Record<number, number> = {};
         let totalH = 0, counterH = 0;
@@ -239,16 +127,16 @@ export class PDFContentExtractor {
         for (let j = 1; j <= pdf.numPages; j++) {
             const page = await pdf.getPage(j);
             const textContent = await page.getTextContent();
-            const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
-            const commonObjs = page.commonObjs._objs;
+            const opList = await page.getOperatorList();
 
             // For highlights
             let highlightAccumulate : boolean = false;
             let highlightAccumulator : string = '';
 
+            // For debugging
             if (j == DEBUG_PAGE) {
-                // console.log(page)
+                console.log(page)
                 for (let i = 0; i < opList.fnArray.length; i++) {
                     const fnType : any = opList.fnArray[i];
                     const args : any = opList.argsArray[i];
@@ -263,7 +151,7 @@ export class PDFContentExtractor {
                 const { dir, width, height, transform, fontName, hasEOL } = item;
                 const x = item.transform[4];
                 const y = item.transform[5];
-                const obj = new ObjectPosition(str, x, y, width, height);
+                const obj = new PDFObjectPosition(str, x, y, width, height);
                 
                 const pseudoKey = Math.round(j * x * y);
                 annotatedObjs[pseudoKey] = item;
@@ -271,10 +159,8 @@ export class PDFContentExtractor {
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
-                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = this.applyAnnotations(
-                                                        item, 
-                                                        annotations, 
-                                                        j);
+                let result = this.applyAnnotations(item, annotations, j);
+                let { highlightStart, highlightEnd, highlightL, highlightR, isComment, commentRef, commentText} = result;
                 if (highlightStart) {
                     highlightAccumulate = true;
                     highlightAccumulator = '';
@@ -295,7 +181,7 @@ export class PDFContentExtractor {
                                                         highlightAccumulate, 
                                                         highlightAccumulator, 
                                                         annotationMetadata, 
-                                                        pageCounter));
+                                                        j));
 
             }
 
@@ -307,12 +193,10 @@ export class PDFContentExtractor {
                     let yScale = args[3];
                     const x : number = args[4];
                     const y : number = args[5];
-                    if (j % 2 === 0) {
+                    if (j % 2 === 0) 
                         leftMarginsEven[x] = (leftMarginsEven[x] === undefined) ? 1 : leftMarginsEven[x] + 1;
-                    }
-                    else {
+                    else 
                         leftMarginsOdd[x] = (leftMarginsOdd[x] === undefined) ? 1 : leftMarginsOdd[x] + 1;
-                    }
                 }
                 else if(fnType === this.pdfjs.OPS.setFont) {
                     let fontSize : number = parseFloat(args[1]);
@@ -323,9 +207,7 @@ export class PDFContentExtractor {
                 }
             }
 
-
-            pageCounter++;
-
+            // Important - clean up once page processing is done
             page.cleanup();
         }
 
@@ -346,6 +228,7 @@ export class PDFContentExtractor {
         }
         let meanTextHeight : number = totalH / (counterH * 0.9);        
 
+        // Append the metadata
         let metadataContents = ``;
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
             const itemMeta = this.metadata[file.basename];
@@ -369,12 +252,13 @@ export class PDFContentExtractor {
             
         }
         metadataContents += `\n\n`;
+        // Append metadata, both any bibtex content and annotations
         await vault.append(newFile, metadataContents);
 
 
-        let inBibliography : boolean = false;
-
         // Main loop through content
+        let inBibliography : boolean = false;
+        // Reset counters
         footnoteCounter = 1;
         footnotes = {};
 
@@ -399,10 +283,10 @@ export class PDFContentExtractor {
             const LINE_HEIGHT_MIN = -1.0;
             const LINE_HEIGHT_MAX = -1.5;
 
-            let objPositions : ObjectPosition[] = [];
+            let objPositions : PDFObjectPosition[] = [];
             let runningText : string = '';
-            let positionRunningText : ObjectPosition = null;
-            let positionImg : ObjectPosition = null;
+            let positionRunningText : PDFObjectPosition = null;
+            let positionImg : PDFObjectPosition = null;
             
             let processingText : boolean = false;
 
@@ -442,7 +326,7 @@ export class PDFContentExtractor {
                     if (highlightAccumulate) 
                         runningText = `==${runningText}`;
                 }
-                positionRunningText = new ObjectPosition(runningText, xn, yn, 0, 0);
+                positionRunningText = new PDFObjectPosition(runningText, xn, yn, 0, 0);
                 lastFontScale = fontScale;
                 fontScale = fontSize * yScale;
                 newLine = false;
@@ -609,6 +493,7 @@ export class PDFContentExtractor {
                         highlightAccumulator = '';
                     }
     
+    
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
                     if (bold && bufferText.trim().length > 0) {
@@ -672,7 +557,7 @@ export class PDFContentExtractor {
                     const x : number = args[4];
                     const y : number = args[5];
                     const yAdj : number = y + yScale;
-                    positionImg = new ObjectPosition(null, x, yAdj, 0, 0);
+                    positionImg = new PDFObjectPosition(null, x, yAdj, 0, 0);
                 }
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
@@ -788,8 +673,6 @@ export class PDFContentExtractor {
 
             if (j == DEBUG_PAGE) 
                 console.log('objPositions', objPositions);
-
-            pageCounter++;
 
             // Release page resources.
             page.cleanup();
@@ -1002,7 +885,7 @@ export class PDFContentExtractor {
                 highlightAccumulator += str + ' ';
         }
         if (highlightEnd) {
-            annotationMetadata.push({ highlightText: highlightAccumulator, page: (pageCounter + 1), commentText: commentText });
+            annotationMetadata.push({ highlightText: highlightAccumulator, page: pageCounter, commentText: commentText });
             highlightAccumulate = false;
         }
         return { str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata };
