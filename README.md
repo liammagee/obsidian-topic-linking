@@ -158,9 +158,20 @@ Finally, the training parameters of the LDA model can be conditioned, as describ
 
 
 
-### Relationship to Other Plugins
+### Acknowledgements
 
-TBD
+This code includes a modified version of the *Citeproc-plus* library.
+
+Source code: <https://github.com/fiduswriter/citeproc-plus>
+Copyright: Johannes Wilm
+License: <https://raw.githubusercontent.com/fiduswriter/citeproc-plus/master/LICENSE>
+
+*Citeproc-plus* in turn includes *citeproc-js* and the [*Citation Style Langage* CSL](<https://citationstyles.org/>) project. 
+
+Citeproc-js licence: <https://raw.githubusercontent.com/Juris-M/citeproc-js/master/LICENSE>
+Citation Style Langage styles: <https://github.com/citation-style-language/styles> 
+Citation Style Langage locales: <https://github.com/citation-style-language/locales> 
+Extra style licence: <https://raw.githubusercontent.com/fiduswriter/citeproc-plus/master/extra_style_licenses.txt>
 
 
 
