@@ -2,5 +2,5 @@
 ---
 ## Page {{ pageNo }}
 
-{{ markdownOutput }}
+{{ markdownOutput | safe }}
 
