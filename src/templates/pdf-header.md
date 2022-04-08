@@ -21,3 +21,4 @@ Source: [[PDFs/{{filePath}}]]
  - {{annotation.highlightText|safe}} [[#Page {{annotation.page}}]]. {% if annotation.commentText %} - **${{ annotation.commentText|safe }}** {% endif %} 
 {% endfor %}
 {% endif %}
+

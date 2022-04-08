@@ -4,7 +4,7 @@ import {
     normalizePath,
     loadPdfJs } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
-import { CiteprocFactory } from './citeproc';
+import { CiteprocFactory } from './bibliography';
 import { formatBibtexAsMetadata } from './bibtex';
 import { encode } from 'fast-png';
 import datasets from '@stdlib/datasets/docs/types';

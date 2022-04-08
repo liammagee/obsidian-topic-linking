@@ -4,10 +4,10 @@ import {
     normalizePath,
     loadPdfJs } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
-import { CiteprocFactory } from './citeproc';
-import { formatBibtexAsMetadata } from './bibtex';
-import { encode } from 'fast-png';
+import { CiteprocFactory } from './bibliography';
+import { TemplateResolver } from './templates/resolver';
 import nunjucks from 'nunjucks';
+import { encode } from 'fast-png';
 
 // From pdf.js src/shared/utils.js
 const ImageKind = {
@@ -52,6 +52,9 @@ export class PDFContentExtractor {
     pdfPath: string;
     metadata: Record<string,any>;
     citeproc: CiteprocFactory;
+    templateHeader: nunjucks.Template;
+    templatePage: nunjucks.Template;
+    templateFooter: nunjucks.Template;
 
 
     /**
@@ -92,7 +95,7 @@ export class PDFContentExtractor {
      * @param file 
      * @param fileCounter 
      */
-    processPDF = async (vault: Vault, settings: TopicLinkingSettings, template: any, file : TFile, fileCounter : number) => {
+    processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
 
         const buffer = await vault.readBinary(file);
         let pdf = null;
@@ -235,30 +238,8 @@ export class PDFContentExtractor {
             itemMeta.bib = this.citeproc.makeBibliography([itemMeta.citationKey]);
             itemMeta.authors = itemMeta.creators.map((creator:any) => creator.lastName + ', ' + creator.firstName).join('; ')
         }
-        // if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
-        //     const itemMeta = this.metadata[file.basename];
-        //     metadataContents += `---`;
-        //     metadataContents += formatBibtexAsMetadata(itemMeta);
-        //     metadataContents += `\n---`;
-        //     const bib : string = this.citeproc.makeBibliography([itemMeta.citationKey]);
-        //     metadataContents += `\n${bib}`;
-        //     metadataContents += `\n[Open in Zotero](${itemMeta.select})`;
-        // }
-        // metadataContents += `\nSource: [[${file.path}]]`;
-        // if (annotationMetadata.length > 0) {
-        //     metadataContents += `\n\n### Annotations\n`;
-        //     for (let annotation of annotationMetadata) {
-        //         metadataContents += `\n - "${annotation.highlightText.trim()}" [[#Page ${annotation.page}]]`;
-        //         if (annotation.commentText !== '')
-        //             metadataContents += ` - **${annotation.commentText.trim()}**`;
-        //         else
-        //             metadataContents += `.`;
-        //     }
-            
-        // }
-        // metadataContents += `\n\n`;
-        let res = nunjucks.renderString(template, { filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata });
-        metadataContents += res;
+
+        metadataContents += this.templateHeader.render({ filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata });
         // Append metadata, both any bibtex content and annotations
         await vault.append(newFile, metadataContents);
 
@@ -674,32 +655,37 @@ export class PDFContentExtractor {
 
 
             let mdStrings = objPositions.map((pos) => { return pos.format(); });
-            mdStrings.splice(0, 0, `\n\n`);
-            if (settings.pdfExtractIncludePagesAsHeadings) {
-                mdStrings.splice(1, 0, `---\n## Page ${j}`);
-            }
+            // mdStrings.splice(0, 0, `\n\n`);
+            // if (settings.pdfExtractIncludePagesAsHeadings) {
+            //     mdStrings.splice(1, 0, `---\n## Page ${j}`);
+            // }
             let mdString : string = mdStrings.join('\n\n');
             // Various fixes
             // mdString = mdString.replace(/(\w)\-\s(\w)/g, '$1$2');
             mdString = mdString.replace('ﬂ ', 'ﬂ');
             mdString = mdString.replace('ﬁ ', 'ﬁ ');
 
+
             if (j == DEBUG_PAGE) 
                 console.log('objPositions', objPositions);
+
+            const pageOutput = this.templatePage.render({ pageNo: j, markdownOutput: mdString });
 
             // Release page resources.
             page.cleanup();
 
-            await vault.append(newFile, mdString);
+            await vault.append(newFile, pageOutput);
 
         }
 
         // Add any footnotes 
-        let footnoteContents : string = '\n\n---\n## Footnotes';
-        for (let footnoteID in footnotes) {
-            let footnoteText = footnotes[footnoteID];
-            footnoteContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
-        }
+        let footnoteContents : string = '';
+        footnoteContents = this.templateFooter.render( { footnotes: footnotes } );
+        // footnoteContents : string = '\n\n---\n## Footnotes';
+        // for (let footnoteID in footnotes) {
+        //     let footnoteText = footnotes[footnoteID];
+        //     footnoteContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
+        // }
         await vault.append(newFile, footnoteContents);
 
     };
@@ -925,16 +911,16 @@ export class PDFContentExtractor {
         const fileSizeLimit = settings.pdfExtractFileSizeLimit;
         const chunkIfFileExceedsLimit = settings.pdfExtractChunkIfFileExceedsLimit;
         const pdfOverwrite = settings.pdfOverwrite === true;
+        const pdfTemplate = settings.templatePdfHeader;
         console.log(`File number limit: ${fileNumberLimit}`);
         console.log(`File size limit: ${fileSizeLimit}`);
         console.log(`Chunk if file exceeds limit: ${chunkIfFileExceedsLimit}`);
         console.log(`Overwrite exising files: ${pdfOverwrite}`);
 
-        // TEST TEMPLATES
-        const md = require('./pdf-metadata.md');
-        const template = md.default;
-        var env = new nunjucks.Environment();
-        var tmpl = new nunjucks.Template(template, env);
+        // Initialise template
+        this.templateHeader = await TemplateResolver.resolveTemplatePdfHeader(vault, settings.templatePdfHeader);
+        this.templatePage = await TemplateResolver.resolveTemplatePdfPage(vault, settings.templatePdfPage);
+        this.templateFooter = await TemplateResolver.resolveTemplatePdfFooter(vault, settings.templatePdfFooter);
 
         // Obtain a set of PDF files - don't include those that have already been generated
         let files: TFile[] = vault.getFiles().filter((file) => {
@@ -972,7 +958,7 @@ export class PDFContentExtractor {
 
         let index = 0;
         for (let file of files) {
-            await this.processPDF(vault, settings, template, file, index++);
+            await this.processPDF(vault, settings, file, index++);
         }
 
         statusBarItemEl.setText('All done!');

@@ -47,6 +47,13 @@ export interface TopicLinkingSettings {
 
     includeTags: boolean;
     
+    templatePdfHeader: string;
+    templatePdfPage: string;
+    templatePdfFooter: string;
+    templateTopicIndex: string;
+    templateTopicIndividual: string;
+    templateBibliographyIndex: string;
+    templateBibliographyEntry: string;
 }
 
 export const DEFAULT_SETTINGS: TopicLinkingSettings = {
@@ -89,6 +96,14 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     ldaThin: 10,
 
     includeTags: false,
+
+    templatePdfHeader: '',
+    templatePdfPage: '',
+    templatePdfFooter: '',
+    templateTopicIndex: '',
+    templateTopicIndividual: '',
+    templateBibliographyIndex: '',
+    templateBibliographyEntry: ''
 
 
 }
@@ -515,5 +530,85 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                         await this.plugin.saveSettings();
                     });
             });
+
+        containerEl.createEl('h4', { text: 'Templates' });
+        new Setting(containerEl)
+            .setName('PDF Header Template')
+            .setDesc('Location of a Markdown template to use for PDF header rendering (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templatePdfHeader.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templatePdfHeader = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('PDF Page Template')
+            .setDesc('Location of a Markdown template to use for PDF page rendering (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templatePdfPage.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templatePdfPage = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+            new Setting(containerEl)
+            .setName('PDF Footer Template')
+            .setDesc('Location of a Markdown template to use for PDF footer rendering (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templatePdfFooter.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templatePdfFooter = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Topic Index Page Template')
+            .setDesc('Location of a Markdown template to use for the Topic Index page (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templateTopicIndex.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templateTopicIndex = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+            new Setting(containerEl)
+            .setName('Topic Individual Page Template')
+            .setDesc('Location of a Markdown template to use for the individual Topic page (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templateTopicIndividual.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templateTopicIndividual = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Bibliography IndexTemplate')
+            .setDesc('Location of a Markdown template to use for the bibliography index (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templateBibliographyIndex.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templateBibliographyIndex = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Bibliography Entry Template')
+            .setDesc('Location of a Markdown template to use for the bibliography entries (overrides the default)')
+            .addText((text) => {
+                text.setPlaceholder('')
+                    .setValue(this.plugin.settings.templateBibliographyEntry.toString())
+                    .onChange(async (value) => {
+                        this.plugin.settings.templateBibliographyEntry = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+
    }
 }

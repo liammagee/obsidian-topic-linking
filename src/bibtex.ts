@@ -1,6 +1,4 @@
-import { 
-    App, 
-    TFile } from 'obsidian';
+import {  App, TFile } from 'obsidian';
 import { TopicLinkingSettings } from './settings';
 
 
