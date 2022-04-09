@@ -19,7 +19,7 @@ const DEBUG_PAGE : number = 0;
 
 // Constants for detecting line change
 // Work on a way to calculate this dynamically for double-spaced texts
-const LINE_HEIGHT_MIN = -0.9;
+const LINE_HEIGHT_MIN = -0.8;
 const LINE_HEIGHT_MAX = -1.3;
 const LINE_HEIGHT_DEFAULT = 1.2;
 
@@ -56,12 +56,8 @@ export class PDFContentExtractor {
     templateHeader: nunjucks.Template;
     templatePage: nunjucks.Template;
     templateFooter: nunjucks.Template;
-    lineSpacingEstimateMin: number;
-    lineSpacingEstimateMax: number;
 
     constructor() {
-        this.lineSpacingEstimateMin = LINE_HEIGHT_DEFAULT * LINE_HEIGHT_MIN;
-        this.lineSpacingEstimateMax = LINE_HEIGHT_DEFAULT * LINE_HEIGHT_MAX;
     }
 
     /**
@@ -96,8 +92,9 @@ export class PDFContentExtractor {
         });
     };
 
+
     /**
-     * Tries to guess the average line spacing, given average y-coordinate changes and text height.
+     * Estimate line spacing
      * @param yAccumulator 
      * @param yCounter 
      * @param hAccumulator 
@@ -107,9 +104,35 @@ export class PDFContentExtractor {
         const yChangeAverage = yAccumulator / yCounter;
         const heightAverage = hAccumulator / hCounter;
         const lineSpacingAverage = yChangeAverage / heightAverage;
-        this.lineSpacingEstimateMin = lineSpacingAverage * LINE_HEIGHT_MIN;
-        this.lineSpacingEstimateMax = lineSpacingAverage * LINE_HEIGHT_MAX;
+        let lineSpacingEstimateMin = lineSpacingAverage * LINE_HEIGHT_MIN;
+        let lineSpacingEstimateMax = lineSpacingAverage * LINE_HEIGHT_MAX;
+        return { lineSpacingEstimateMin, lineSpacingEstimateMax };
     }    
+
+
+    /**
+     * Estimates odd and event left margins
+     * @param leftMarginsOdd 
+     * @param leftMarginsEven 
+     * @returns 
+     */
+    estimateMargins(leftMarginsOdd: Record<string, any>, leftMarginsEven: Record<string, any>) {
+        let leftMarginOddLikely : number = 1000, leftMarginOddLikelyCounter : number = 0;
+        let leftMarginEvenLikely : number = 1000, leftMarginEvenLikelyCounter : number = 0;
+        for (let key in leftMarginsOdd) {
+            if (leftMarginsOdd[key] > leftMarginOddLikelyCounter) {
+                leftMarginOddLikelyCounter = leftMarginsOdd[key];
+                leftMarginOddLikely = parseFloat(key);
+            } 
+        }
+        for (let key in leftMarginsEven) {
+            if (leftMarginsEven[key] > leftMarginEvenLikelyCounter) {
+                leftMarginEvenLikelyCounter = leftMarginsEven[key];
+                leftMarginEvenLikely = parseFloat(key);
+            }
+        }
+        return { leftMarginOddLikely, leftMarginEvenLikely };
+    }
 
     /**
      * Processess a single PDF file, by page and item, and extracts Markdown text based on a series of basic heuristics.
@@ -156,6 +179,8 @@ export class PDFContentExtractor {
         let yAccumulator = 0, yCounter = 0, yLast = 0;
         let hAccumulator = 0, hCounter = 0, hLast = 0;
 
+
+        // FIRST LOOP: extract annotations, and estimate line spacing and left margins
         for (let j = 1; j <= pdf.numPages; j++) {
             const page = await pdf.getPage(j);
             const textContent = await page.getTextContent();
@@ -168,7 +193,6 @@ export class PDFContentExtractor {
 
             // For debugging
             if (j == DEBUG_PAGE) {
-                console.log(page)
                 for (let i = 0; i < opList.fnArray.length; i++) {
                     const fnType : any = opList.fnArray[i];
                     const args : any = opList.argsArray[i];
@@ -249,23 +273,12 @@ export class PDFContentExtractor {
             page.cleanup();
         }
 
-        this.estimateLineSpacing(yAccumulator, yCounter, hAccumulator, hCounter);
+        let { lineSpacingEstimateMin, lineSpacingEstimateMax} = this.estimateLineSpacing(yAccumulator, yCounter, hAccumulator, hCounter);
 
         // Calculate odd and even margins, average text height
-        let leftMarginOddLikely : number = 1000, leftMarginOddLikelyCounter : number = 0;
-        for (let key in leftMarginsOdd) {
-            if (leftMarginsOdd[key] > leftMarginOddLikelyCounter) {
-                leftMarginOddLikelyCounter = leftMarginsOdd[key];
-                leftMarginOddLikely = parseFloat(key);
-            } 
-        }
-        let leftMarginEvenLikely : number = 1000, leftMarginEvenLikelyCounter : number = 0;
-        for (let key in leftMarginsEven) {
-            if (leftMarginsEven[key] > leftMarginEvenLikelyCounter) {
-                leftMarginEvenLikelyCounter = leftMarginsEven[key];
-                leftMarginEvenLikely = parseFloat(key);
-            }
-        }
+        let { leftMarginOddLikely, leftMarginEvenLikely } = this.estimateMargins(leftMarginsOdd, leftMarginsEven);
+
+        // Calculate average text height
         let meanTextHeight : number = totalH / (counterH * 0.9);        
 
         // Append the metadata
@@ -288,6 +301,7 @@ export class PDFContentExtractor {
         footnoteCounter = 1;
         footnotes = {};
 
+        // SECOND LOOP: Do content extraction
         for (let j = 1; j <= pdf.numPages; j++) {
 
             const page = await pdf.getPage(j);
@@ -320,6 +334,7 @@ export class PDFContentExtractor {
             let xl = 0, yl = 0;
             let xOffset = 0, yOffset = 0;
             let xll = j % 2 == 1 ? leftMarginOddLikely : leftMarginEvenLikely;
+            let runningWidth : number = 0;
 
             let italic : boolean = false, bold : boolean = false;
             let subscript : boolean = false, superscript : boolean = false;
@@ -355,6 +370,7 @@ export class PDFContentExtractor {
                 lastFontScale = fontScale;
                 fontScale = fontSize * yScale;
                 newLine = false;
+                runningWidth = 0;
             };
                     
             // Loop through operators
@@ -366,6 +382,7 @@ export class PDFContentExtractor {
                 let width = 0;
                 if (annotatedObjs[pseudoKey] !== undefined) 
                     width = annotatedObjs[pseudoKey].width;
+                
                 if (fnType === this.pdfjs.OPS.beginText) {
                     // processing text
                     processingText = true;
@@ -402,20 +419,22 @@ export class PDFContentExtractor {
                     let localFontScale = fontSize * yScale;
                     let completedObject = false;
 
-                    // if (positionRunningText != null && (bounds(-yChange, this.lineSpacingEstimateMax, 0))) {
+                    // if (positionRunningText != null && (bounds(-yChange, lineSpacingEstimateMax, 0))) {
                     if (positionRunningText != null && 
-                         (bounds(yChange, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin) && x <= xll)) {
+                         (bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) && x <= xll)) {
                         // Do nothing
-                        newLine = bounds(yChange, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin);// && xChange <= 0;
+                        newLine = bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin);// && xChange <= 0;
+                        xSpaces = Math.abs(xn - xl) / fontScale;
                     }
                     else if (positionRunningText != null && 
                         (x > xl && Math.abs(yChange) < 0.5 && Math.abs(lastFontScale) >= Math.abs(fontScale))) {
                         // Do nothing
-                        newLine = bounds(yChange, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin);// && xChange <= 0;
+                        newLine = bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin);// && xChange <= 0;
                         if (!newLine && Math.abs(fontScale) > Math.abs(localFontScale)) {
-                            // subscript = yChange < 0 && yChange > this.lineSpacingEstimateMax;
-                            superscript = yChange > 0 && yChange < -this.lineSpacingEstimateMin;
+                            // subscript = yChange < 0 && yChange > lineSpacingEstimateMax;
+                            superscript = yChange > 0 && yChange < -lineSpacingEstimateMin;
                         }
+                        xSpaces = Math.abs(xn - xl) / fontScale;
                     }
                     else {
                         completeObject(xn, yn, width, yl);
@@ -431,7 +450,7 @@ export class PDFContentExtractor {
                         }
                     }
                     if (j == DEBUG_PAGE)
-                        console.log("setTextMatrix", completedObject, bounds(yChange, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin), x, xl, xll, yn, yl, yScale, yChange, lastFontScale, fontScale, positionRunningText)
+                        console.log("setTextMatrix", completedObject, bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin), x, xl, xll, yn, yl, yScale, yChange, lastFontScale, fontScale, positionRunningText)
                     xl = xn;
                     yl = yn;
                     xll = x;
@@ -450,18 +469,18 @@ export class PDFContentExtractor {
                     // 2. Next line, inside bibliography
                     // 3. Same line
                     if (!inBibliography && 
-                        ((bounds(yChange, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin) && x <= 0) || 
+                        ((bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) && x <= 0) || 
                             (Math.abs(yChange) < 0.1))) {
-                        newLine = (bounds(y, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin));
+                        newLine = (bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin));
                         xSpaces = Math.abs(xn - xl) / fontScale;
                         // Do not create a new object
                     }
                     else if (inBibliography && 
-                        ((j % 2 == 0 && bounds(y, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin) && xn > leftMarginEvenLikely + xScale) || 
-                         (j % 2 == 1 && bounds(y, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin) && xn > leftMarginOddLikely + xScale) || 
+                        ((j % 2 == 0 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginEvenLikely + xScale) || 
+                         (j % 2 == 1 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginOddLikely + xScale) || 
                             (Math.abs(y) < 0.1))) {
-                        newLine = (j % 2 == 0 && bounds(y, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin) && xn > leftMarginEvenLikely + xScale) || 
-                            (j % 2 == 1 && bounds(y, this.lineSpacingEstimateMax, this.lineSpacingEstimateMin) && xn > leftMarginOddLikely + xScale);
+                        newLine = (j % 2 == 0 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginEvenLikely + xScale) || 
+                            (j % 2 == 1 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginOddLikely + xScale);
                         xSpaces = Math.abs(xn - xl) / fontScale;
                         // Do not create a new object
                     }
@@ -496,7 +515,7 @@ export class PDFContentExtractor {
 
                     if (newLine && runningText.length > 0 && !runningText.endsWith(' ') && !runningText.endsWith('\n') && bufferText.trim().length > 0) 
                         runningText += ' ';
-                    if (!newLine && xSpaces > runningText.length && runningText.length > 0 && !runningText.endsWith(' ')) 
+                    if (!newLine && xl > runningWidth && runningText.length > 0 && !runningText.endsWith(' ')) 
                         runningText += ' '; 
 
                     if (newLine && bufferText.trim().length == 0) {
@@ -515,10 +534,9 @@ export class PDFContentExtractor {
                     // if (j == DEBUG_PAGE) 
                     //     console.log('showText', newLine, j, i, bufferText);
 
-    
-
                     if (width === undefined)
                         width = bufferText.length * fontSize * xScale;
+                    runningWidth += width;
 
                     let height = fontScale;
                     let transform = [1, 0, 0, 1, xl, yl];
