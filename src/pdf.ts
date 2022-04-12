@@ -16,12 +16,36 @@ const ImageKind = {
     RGBA_32BPP: 3
 };
 const DEBUG_PAGE : number = 0;
+const DEBUG_ITEM_START : number = 219;
+const DEBUG_ITEM_END : number = 299;
 
 // Constants for detecting line change
 // Work on a way to calculate this dynamically for double-spaced texts
 const LINE_HEIGHT_MIN = -0.8;
 const LINE_HEIGHT_MAX = -1.3;
-const LINE_HEIGHT_DEFAULT = 1.2;
+
+
+
+class PDFDocumentState {
+    lineSpacingEstimateMin: number;
+    lineSpacingEstimateMax: number;
+    leftMarginOddLikely: number;
+    leftMarginEvenLikely: number;
+    meanTextHeight: number;
+    footnoteCounter: number;
+    footnotes: any;
+    inBibliography: boolean;
+
+    resetState() {
+        this.footnoteCounter = 0;
+        this.footnotes = {};
+    }
+}
+
+
+class PDFPageState {
+
+}
 
 
 class PDFObjectPosition {
@@ -40,12 +64,16 @@ class PDFObjectPosition {
     format() {
         let str : string = this.obj;
         str = str.trimStart();
+        if (str.startsWith('* '))
+            str = '\\' + str;
+        str = str.replace('</sup> <sup>', ' ');
         return str;
     }
     copy() {
         return new PDFObjectPosition(this.obj, this.x, this.y, this.width, this.height);
     }
 }
+
 
 export class PDFContentExtractor {
     pdfjs: any;
@@ -141,6 +169,8 @@ export class PDFContentExtractor {
      */
     processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
 
+        let stateDocument : PDFDocumentState = new PDFDocumentState();
+
         const buffer = await vault.readBinary(file);
         let pdf = null;
         try {
@@ -171,11 +201,13 @@ export class PDFContentExtractor {
         let annotationMetadata : any[] = [];
         let annotatedObjs : any = {};
 
+
         // For margins
         let leftMarginsOdd : Record<number, number> = {},
             leftMarginsEven : Record<number, number> = {};
         let totalH = 0, counterH = 0;
         let fontScale : number = 1;
+        let fontSize : number = 1;
         let yAccumulator = 0, yCounter = 0, yLast = 0;
         let hAccumulator = 0, hCounter = 0, hLast = 0;
 
@@ -198,6 +230,7 @@ export class PDFContentExtractor {
                     const args : any = opList.argsArray[i];
                     console.log(fnType, args)
                 }
+                console.log(page)
             }
 
             yLast = 0;
@@ -259,13 +292,14 @@ export class PDFContentExtractor {
                         leftMarginsEven[x] = (leftMarginsEven[x] === undefined) ? 1 : leftMarginsEven[x] + 1;
                     else 
                         leftMarginsOdd[x] = (leftMarginsOdd[x] === undefined) ? 1 : leftMarginsOdd[x] + 1;
-                }
-                else if(fnType === this.pdfjs.OPS.setFont) {
-                    let fontSize : number = parseFloat(args[1]);
                     if (fontSize > 0) {
                         totalH += fontSize * fontScale;
                         counterH++;
                     }
+    
+                }
+                else if(fnType === this.pdfjs.OPS.setFont) {
+                    fontSize = parseFloat(args[1]);
                 }
             }
 
@@ -273,26 +307,21 @@ export class PDFContentExtractor {
             page.cleanup();
         }
 
-        let { lineSpacingEstimateMin, lineSpacingEstimateMax} = this.estimateLineSpacing(yAccumulator, yCounter, hAccumulator, hCounter);
 
+        let { lineSpacingEstimateMin, lineSpacingEstimateMax} = this.estimateLineSpacing(yAccumulator, yCounter, hAccumulator, hCounter);
         // Calculate odd and even margins, average text height
         let { leftMarginOddLikely, leftMarginEvenLikely } = this.estimateMargins(leftMarginsOdd, leftMarginsEven);
-
         // Calculate average text height
-        let meanTextHeight : number = totalH / (counterH * 0.9);        
+        let meanTextHeight : number = totalH / (counterH * 0.8);
+
+        stateDocument.lineSpacingEstimateMin = lineSpacingEstimateMin;
+        stateDocument.lineSpacingEstimateMax = lineSpacingEstimateMax;
+        stateDocument.leftMarginOddLikely = leftMarginOddLikely;
+        stateDocument.leftMarginEvenLikely = leftMarginEvenLikely;
+        stateDocument.meanTextHeight = meanTextHeight;
 
         // Append the metadata
-        let metadataContents = ``;
-        let itemMeta: any = {};
-        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
-            itemMeta = this.metadata[file.basename];
-            itemMeta.bib = this.citeproc.makeBibliography([itemMeta.citationKey]);
-            itemMeta.authors = itemMeta.creators.map((creator:any) => creator.lastName + ', ' + creator.firstName).join('; ')
-        }
-
-        metadataContents += this.templateHeader.render({ filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata });
-        // Append metadata, both any bibtex content and annotations
-        await vault.append(newFile, metadataContents);
+        await this.addMetadataAndAnnotations(file, annotationMetadata, vault, newFile);
 
 
         // Main loop through content
@@ -300,16 +329,22 @@ export class PDFContentExtractor {
         // Reset counters
         footnoteCounter = 1;
         footnotes = {};
+        stateDocument.resetState();
+        stateDocument.inBibliography = inBibliography;
+
 
         // SECOND LOOP: Do content extraction
         for (let j = 1; j <= pdf.numPages; j++) {
 
+            let statePage : PDFPageState = new PDFPageState();
+
+
             const page = await pdf.getPage(j);
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
+            const textContent = await page.getTextContent();
             const commonObjs = page.commonObjs._objs;
 
-            let counter = 0;
             let inCode = false;
 
             // For highlights
@@ -324,27 +359,31 @@ export class PDFContentExtractor {
             let runningText : string = '';
             let positionRunningText : PDFObjectPosition = null;
             let positionImg : PDFObjectPosition = null;
-            
-            let processingText : boolean = false;
 
             // Coordinate variables
             // Set scale to 1 by default (in case setTextMatrix is not called)
-            let xScale : number = 1, yScale : number = 1;
-            let xSpaces : number = 0;
+            let xScale : number = 1;
+            let yScale : number = 1;
             let xl = 0, yl = 0;
             let xOffset = 0, yOffset = 0;
             let xll = j % 2 == 1 ? leftMarginOddLikely : leftMarginEvenLikely;
             let runningWidth : number = 0;
 
-            let italic : boolean = false, bold : boolean = false;
-            let subscript : boolean = false, superscript : boolean = false;
+            let italic : boolean = false;
+            let bold : boolean = false;
+            let subscript : boolean = false;
+            let superscript : boolean = false;
             let newLine : boolean = false;
 
             let fontSize : number = 1;
-            let fontScale : number = 1, lastFontScale : number = 1;
+            let fontScale : number = 1;
+            let fontScaleLast : number = 1;
+            let fontScaleChange : number = 0;
 
+            let associatedItem = null;
 
             // Helper functions
+            // These make use of local variables, need to remain in scope
             const bounds = (test:number, min:number, max:number) =>  (test >= min && test <= max);
 
             const completeObject = (xn : number, yn: number, width: number, height: number) => {
@@ -353,6 +392,8 @@ export class PDFContentExtractor {
                         inBibliography = true;
 
                     // Treat as a heading, and calculate the heading size by the height of the line
+                    // if (j == DEBUG_PAGE)
+                    //     console.log(fontScale, meanTextHeight, runningText)
                     let { headingPadding, heading, headingTrail } = this.headingHandler(fontScale, meanTextHeight, runningText);
                     runningText = `${headingPadding}${heading}${runningText}${headingTrail}`;
 
@@ -367,90 +408,105 @@ export class PDFContentExtractor {
                         runningText = `==${runningText}`;
                 }
                 positionRunningText = new PDFObjectPosition(runningText, xn, yn, 0, 0);
-                lastFontScale = fontScale;
+                fontScaleLast = fontScale;
                 fontScale = fontSize * yScale;
+                
                 newLine = false;
                 runningWidth = 0;
+
+                return true;
             };
-                    
+            // if (j == DEBUG_PAGE)  
+            //     console.log("annotatedObjs", annotatedObjs)
+
+            if (positionRunningText !== null) {
+                objPositions.push(positionRunningText);
+                positionRunningText.obj = runningText;
+            }
+                            
             // Loop through operators
             for (let i = 0; i < opList.fnArray.length; i++) {
                 const fnType : any = opList.fnArray[i];
                 const args : any = opList.argsArray[i];
                 
                 const pseudoKey = Math.round(j * 1000000 + yl * 1000 + xl);
-                let width = 0;
-                if (annotatedObjs[pseudoKey] !== undefined) 
-                    width = annotatedObjs[pseudoKey].width;
+                associatedItem = annotatedObjs[pseudoKey] !== undefined ? annotatedObjs[pseudoKey] : associatedItem;
+                let width = (associatedItem !== null) ? associatedItem.width : 0;
                 
                 if (fnType === this.pdfjs.OPS.beginText) {
-                    // processing text
-                    processingText = true;
+                    // Begin text
                 }
                 else if (fnType === this.pdfjs.OPS.endText) {
-                    // if (j == DEBUG_PAGE)
-                    //     console.log('endText')
-                    processingText = false;
+                    // End of text
                 }
                 else if (fnType === this.pdfjs.OPS.setFont) {
                     // processing font - look up from commonObjs
-                            
+
+                    // Get font properties
                     const font : any = commonObjs[args[0]];
                     const fontDataName = font.data.name;
-                    fontSize = parseFloat(args[1]);
-                    // if (j == DEBUG_PAGE)  
-                    //     console.log('setFont', fontScale, fontSize)
                     italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1);
                     bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1);
+                    fontSize = parseFloat(args[1]);
                 }
                 else if (fnType === this.pdfjs.OPS.setTextMatrix) {
                     xScale = args[0];
-                    yScale = args[3];
                     const x : number = args[4];
-                    const y : number = args[5];
                     let xn :number = x;// * xScale * fontSize;
+                    let xChange : number = xn - (xl + width);
+
+                    yScale = args[3];
+                    const y : number = args[5];
                     let ySign = Math.sign(yScale);
                     let yn :number = y * ySign;
-                    let xChange : number = xn - (xl + width);
-                    let yChange : number = (yn - yl) / (fontScale * ySign);
+
                     newLine = false;
                     superscript = false;
                     subscript = false;
-                    let localFontScale = fontSize * yScale;
+                    let fontScaleNew = fontSize * yScale;
+                    let fontScaleMax = fontScale;
+                    if (Math.abs(fontScaleMax) < Math.abs(fontScaleLast))
+                        fontScaleMax = fontScaleLast;
+                    if (Math.abs(fontScaleMax) < Math.abs(fontScaleNew))
+                        fontScaleMax = fontScaleNew;
+                    let yChange : number = (yn - yl) / (fontScaleMax * ySign);
+
+
                     let completedObject = false;
 
-                    // if (positionRunningText != null && (bounds(-yChange, lineSpacingEstimateMax, 0))) {
-                    if (positionRunningText != null && 
-                         (bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) && x <= xll)) {
-                        // Do nothing
+                    // Captures the case where the y coordinate change is not significant enough to mean a nwe line change
+                    if (positionRunningText != null && x <= xll && 
+                        ((bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) && 
+                        fontScaleNew > meanTextHeight * 0.9) )) {
+                               // Do nothing
                         newLine = bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin);// && xChange <= 0;
-                        xSpaces = Math.abs(xn - xl) / fontScale;
                     }
                     else if (positionRunningText != null && 
-                        (x > xl && Math.abs(yChange) < 0.5 && Math.abs(lastFontScale) >= Math.abs(fontScale))) {
+                        (x > xl && Math.abs(yChange) < .51)) {
+                        // (x > xl && Math.abs(yChange) < 0.5 && Math.abs(fontScaleLast) >= Math.abs(fontScale))) {
                         // Do nothing
                         newLine = bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin);// && xChange <= 0;
-                        if (!newLine && Math.abs(fontScale) > Math.abs(localFontScale)) {
-                            // subscript = yChange < 0 && yChange > lineSpacingEstimateMax;
-                            superscript = yChange > 0 && yChange < -lineSpacingEstimateMin;
+                        if (!newLine && Math.abs(fontScale) > Math.abs(fontScaleNew) && fontScale < meanTextHeight * 0.8) {
+                            superscript = yChange > 0.01 && yChange < -lineSpacingEstimateMin;
                         }
-                        xSpaces = Math.abs(xn - xl) / fontScale;
                     }
                     else {
                         completeObject(xn, yn, width, yl);
                         completedObject = true;
 
                         let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
-                        let xmin : number = Math.round(xn - Math.abs(fontScale) * 5);
-                        if (Math.abs(lastFontScale) > Math.abs(fontScale) && j % 2 === 0 && bounds(leftMarginEvenLikely, xmin, xmax)) {
+                        let xmin : number = Math.round(xn - Math.abs(fontScale) * 4);
+                        if (fontScale < meanTextHeight * 0.9 && j % 2 === 0 && bounds(leftMarginEvenLikely, xmin, xmax)) {
                             runningText = `> ${runningText}`;
                         }
-                        else if (Math.abs(lastFontScale) > Math.abs(fontScale) && j % 2 === 1 && bounds(leftMarginOddLikely, xmin, xmax)) {
+                        else if (fontScale < meanTextHeight * 0.9 && j % 2 === 1 && bounds(leftMarginOddLikely, xmin, xmax)) {
                             runningText = `> ${runningText}`;
                         }
+
+                        superscript = Math.abs(fontScaleLast) > Math.abs(fontScale) && fontScale < meanTextHeight * 0.7 && yChange < -lineSpacingEstimateMin;
                     }
-                    if (j == DEBUG_PAGE)
-                        console.log("setTextMatrix", completedObject, bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin), x, xl, xll, yn, yl, yScale, yChange, lastFontScale, fontScale, positionRunningText)
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                        console.log(`setTextMatrix ${i}`, meanTextHeight, completedObject, yn, yl, yScale, yChange, fontScaleLast, fontScale, fontScaleNew, bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) )
                     xl = xn;
                     yl = yn;
                     xll = x;
@@ -472,8 +528,6 @@ export class PDFContentExtractor {
                         ((bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) && x <= 0) || 
                             (Math.abs(yChange) < 0.1))) {
                         newLine = (bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin));
-                        xSpaces = Math.abs(xn - xl) / fontScale;
-                        // Do not create a new object
                     }
                     else if (inBibliography && 
                         ((j % 2 == 0 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginEvenLikely + xScale) || 
@@ -481,14 +535,12 @@ export class PDFContentExtractor {
                             (Math.abs(y) < 0.1))) {
                         newLine = (j % 2 == 0 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginEvenLikely + xScale) || 
                             (j % 2 == 1 && bounds(y, lineSpacingEstimateMax, lineSpacingEstimateMin) && xn > leftMarginOddLikely + xScale);
-                        xSpaces = Math.abs(xn - xl) / fontScale;
-                        // Do not create a new object
                     }
                     else {
                         completeObject(xn, yn, width, yl);
                     }
-                    if (j == DEBUG_PAGE)
-                        console.log("setLeadingMoveText", yChange, fontScale, x, y, xl, yl, xn, yn);
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                        console.log(`setLeadingMoveText ${i}`, yChange, fontScale, x, y, xl, yl, xn, yn);
                     xl = xn;
                     yl = yn;
 
@@ -515,7 +567,8 @@ export class PDFContentExtractor {
 
                     if (newLine && runningText.length > 0 && !runningText.endsWith(' ') && !runningText.endsWith('\n') && bufferText.trim().length > 0) 
                         runningText += ' ';
-                    if (!newLine && xl > runningWidth && runningText.length > 0 && !runningText.endsWith(' ')) 
+                    
+                    if (!newLine && (xl > runningWidth || xl < xll) && runningText.length > 0 && !runningText.endsWith(' ')) 
                         runningText += ' '; 
 
                     if (newLine && bufferText.trim().length == 0) {
@@ -531,12 +584,14 @@ export class PDFContentExtractor {
                         runningText = runningText.substring(0, runningText.length - 2);
                     else if (bufferText.endsWith('- '))
                         bufferText = bufferText.substring(0, bufferText.length - 1);
-                    // if (j == DEBUG_PAGE) 
+                    // if (j == DEBUG_PAGE)  
                     //     console.log('showText', newLine, j, i, bufferText);
 
-                    if (width === undefined)
-                        width = bufferText.length * fontSize * xScale;
-                    runningWidth += width;
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                        console.log(`showText ${i}`, runningWidth, xl, xll, pseudoKey, newLine, `%${bufferText}%`, `%${runningText}%`); //, `@${associatedItem.str}@`
+
+                    let tmpWidth = bufferText.length * fontSize * xScale;
+                    runningWidth = xl + tmpWidth;
 
                     let height = fontScale;
                     let transform = [1, 0, 0, 1, xl, yl];
@@ -548,7 +603,12 @@ export class PDFContentExtractor {
                         highlightAccumulate = true;
                         highlightAccumulator = '';
                     }
-    
+        
+                    if (subscript)
+                        bufferText = `<sub>${bufferText}</sub>`;
+                    else if (superscript)
+                        bufferText = `<sup>${bufferText}</sup>`;
+
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
                     if (bold && bufferText.trim().length > 0) {
@@ -567,12 +627,6 @@ export class PDFContentExtractor {
                         else
                             bufferText = `*${bufferText.trim()}*${trailingSpace}`;
                     }
-    
-                    if (subscript)
-                        bufferText = `<sub>${bufferText}</sub>`;
-                    else if (superscript)
-                        bufferText = `<sup>${bufferText}</sup>`;
-
 
                     // Handle any highlighting
                     let str = '';
@@ -586,12 +640,11 @@ export class PDFContentExtractor {
                             annotationMetadata, 
                             j));
     
-                    // if (j == DEBUG_PAGE)
-                    //     console.log("showText", newLine, `%${bufferText}%`, `%${runningText}%`, `@${str}@`);
+        
     
                     // Causes problems. Remove when safe to do so.
-                    // if (str.trim().length == 0) 
-                    //     str = '';
+                    if (str.trim().length == 0) 
+                        str = '';
 
 
                     runningText += str;
@@ -678,6 +731,10 @@ export class PDFContentExtractor {
                     }
                 }
             }
+
+            // Release page resources.
+            page.cleanup();
+
             if (runningText.trim() !== '') {
                 positionRunningText.obj = runningText;
                 objPositions.push(positionRunningText);
@@ -720,16 +777,15 @@ export class PDFContentExtractor {
             // mdString = mdString.replace(/(\w)\-\s(\w)/g, '$1$2');
             mdString = mdString.replace('ﬂ ', 'ﬂ');
             mdString = mdString.replace('ﬁ ', 'ﬁ ');
+            mdString = mdString.replace('</sup> <sup>', ' ');
+            // mdString = mdString.replace(/(\ +)/g, ' ');
 
-
-            if (j == DEBUG_PAGE) 
+            if (j == DEBUG_PAGE)  {
+                // console.log("textContent", textContent);
                 console.log('objPositions', objPositions);
+            }
 
             const pageOutput = this.templatePage.render({ pageNo: j, markdownOutput: mdString });
-
-            // Release page resources.
-            page.cleanup();
-
             await vault.append(newFile, pageOutput);
 
         }
@@ -737,14 +793,25 @@ export class PDFContentExtractor {
         // Add any footnotes 
         let footnoteContents : string = '';
         footnoteContents = this.templateFooter.render( { footnotes: footnotes } );
-        // footnoteContents : string = '\n\n---\n## Footnotes';
-        // for (let footnoteID in footnotes) {
-        //     let footnoteText = footnotes[footnoteID];
-        //     footnoteContents += `\n\n[^${footnoteID}]: ${footnoteText}`;
-        // }
         await vault.append(newFile, footnoteContents);
 
     };
+
+
+    private async addMetadataAndAnnotations(file: TFile, annotationMetadata: any[], vault: Vault, newFile: TFile) {
+        let metadataContents = ``;
+        let itemMeta: any = {};
+        if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
+            itemMeta = this.metadata[file.basename];
+            itemMeta.bib = this.citeproc.makeBibliography([itemMeta.citationKey]);
+            itemMeta.authors = itemMeta.creators.map((creator: any) => creator.lastName + ', ' + creator.firstName).join('; ');
+        }
+
+        metadataContents += this.templateHeader.render({ filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata });
+        // Append metadata, both any bibtex content and annotations
+        await vault.append(newFile, metadataContents);
+    }
+
 
 
     private headingHandler(height: any, meanTextHeight: number, str: any) {
@@ -762,7 +829,7 @@ export class PDFContentExtractor {
         }
         // In the case where all the text is upper case, treat as a level 3 heading
         // TODO: Probably needs to be another heading
-        if (str.trim() !== '' && str.search(/[A-Z]/) >= 0 && str.toUpperCase() === str) {
+        if (str.trim() !== '' && str.search(/[A-Z]/) >= 0 && str.toUpperCase() === str && height > meanTextHeight * 0.9) {
             const headingSize = 3;
             if (headingSize <= 6) {
                 heading = "#".repeat(headingSize) + ' ';

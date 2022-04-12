@@ -1045,62 +1045,104 @@ export class PDFContentExtractor {
             let textPositions : any[] = [];
             runningText  = '';
             positionRunningText  = null;
-            let xl = -1, yl = -1;
+            // let xl = -1, yl = -1;
             for (let i = 0; i < textContent.items.length; i++) {
                 const item = textContent.items[i];
                 let markdownText = '';
                 let { str } = item;
                 const { dir, width, height, transform, fontName, hasEOL } = item;
                 let xScale = transform[0], yScale = transform[3];
-                let x = parseFloat(transform[4]), y = parseFloat(transform[5]);
+                let x = parseFloat(transform[4]), 
+                    y = parseFloat(transform[5]);
                 let xChange = x - xl;
                 let yChange = y - yl;
+    
+                if (j == DEBUG_PAGE)  
+                    console.log('setFont', item, fontName, commonObjs)
+                const fns = Object.keys(commonObjs).reduce((map, o) => { map[commonObjs[o].data.name] = commonObjs[o]; return map; }, ({} as any));
+                const font : any = fns[fontName];
+                // const font : any = commonObjs[fontName];
+                italic = (font.data.italic !== undefined ? font.data.italic : fontName.indexOf('Italic') > -1);
+                bold = (font.data.bold !== undefined ? font.data.bold : fontName.indexOf('Bold') > -1);
 
-                if (j == 0) {
-                    // console.log("x", x, xl, xChange);
-                    console.log("y", y, yl, yChange);
-                    console.log("fontName", fontName);
-                    console.log("item", item);
-                    console.log("commonObjs", commonObjs);
-                    // console.log("conditions", (yChange < 0 && xChange > 0));
-                    // console.log("scale", xScale, yScale);
-                    // console.log("positionRunningText", positionRunningText);
-                    // console.log("runningText", runningText);
-                    console.log("str", `|${str}|`);
+                // Apply annotations
+                let itemHighlights : any = this.applyAnnotations(item, annotations, j);
+                if (itemHighlights.highlightStart) {
+                    highlightAccumulate = true;
+                    highlightAccumulator = '';
                 }
+    
+                if (subscript)
+                    str = `<sub>${str}</sub>`;
+                else if (superscript)
+                    str = `<sup>${str}</sup>`;
+
+                let leadingSpace2 = str.startsWith(' ') ? ' ' : '';
+                let trailingSpace2 = str.endsWith(' ') ? ' ' : '';
+                if (bold && str.trim().length > 0) {
+                    if (runningText.endsWith('**')) {
+                        runningText = runningText.substring(0, runningText.length - 2);
+                        str = `${str.trim()}**${trailingSpace2}`;
+                    }
+                    else 
+                        str = `**${str.trim()}**${trailingSpace2}`;
+                }
+                if (italic && str.trim().length > 0) {
+                    if (runningText.endsWith('*')) {
+                        runningText = runningText.substring(0, runningText.length - 1);
+                        str = `${str.trim()}*${trailingSpace2}`;
+                    }
+                    else
+                        str = `*${str.trim()}*${trailingSpace2}`;
+                }
+
+                // Handle any highlighting
+                ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(
+                        str, 
+                        itemHighlights,
+                        footnoteCounter, 
+                        footnotes, 
+                        highlightAccumulate, 
+                        highlightAccumulator, 
+                        annotationMetadata, 
+                        j));
+
+                // if (j == 0) {
+                //     // console.log("x", x, xl, xChange);
+                //     console.log("y", y, yl, yChange);
+                //     console.log("fontName", fontName);
+                //     console.log("item", item);
+                //     console.log("commonObjs", commonObjs);
+                //     // console.log("conditions", (yChange < 0 && xChange > 0));
+                //     // console.log("scale", xScale, yScale);
+                //     // console.log("positionRunningText", positionRunningText);
+                //     // console.log("runningText", runningText);
+                //     console.log("str", `|${str}|`);
+                // }
                 // Italic, bold formatting
                 let leadingSpace;
                 let trailingSpace;
-                ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
+                // ({ leadingSpace, trailingSpace, str } = this.formatHandler(commonObjs, fontName, str));
                 if (positionRunningText === null) {
                     runningText = str;
-                    positionRunningText = new ObjectPosition(runningText, x, y);
-                    xl = x;
-                    yl = y;
+                    positionRunningText = new PDFObjectPosition(runningText, x, y, width, height);
                 }
-                else if (-Math.abs(yChange) < LINE_HEIGHT_MAX * yScale || (yChange < 0 && xChange > 0)) {
+                else if (-Math.abs(yChange) < LINE_HEIGHT_MAX * yScale || 
+                    (yChange < 0 && xChange > 0)) {
                     positionRunningText.obj = runningText;
                     objPositions.push(positionRunningText);
                     runningText = str;
-                    positionRunningText = new ObjectPosition(runningText, x, y);
-                    xl = x;
-                    yl = y;
+                    positionRunningText = new PDFObjectPosition(runningText, x, y, width, height);
                 }
                 else if (yChange === 0) {
                     runningText += str;
-                    xl = x;
-                    yl = y;
                 }
                 else {
                     runningText += ' ';
                     runningText += str;
-                    xl = x;
-                    yl = y;
                 }
-            }
-            if (positionRunningText !== null) {
-                objPositions.push(positionRunningText);
-                positionRunningText.obj = runningText;
+                xl = x;
+                yl = y;
             }
             */
                 
