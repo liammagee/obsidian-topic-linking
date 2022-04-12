@@ -15,7 +15,7 @@ const ImageKind = {
     RGB_24BPP: 2,
     RGBA_32BPP: 3
 };
-const DEBUG_PAGE : number = 0;
+const DEBUG_PAGE : number = 2;
 const DEBUG_ITEM_START : number = 219;
 const DEBUG_ITEM_END : number = 299;
 
@@ -267,6 +267,9 @@ export class PDFContentExtractor {
                     highlightAccumulator = '';
                 }
 
+                if (j == DEBUG_PAGE)
+                    console.log(str, itemHighlights);
+
                 // Handle any highlighting
                 ({ str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata } = this.highlightHandler(
                                                         str, 
@@ -474,19 +477,25 @@ export class PDFContentExtractor {
 
                     let completedObject = false;
 
+                    const BLOCKQUOTE_DEVIANCE = 0.9;
+                    const SUBSCRIPT_DEVIANCE = 0.75;
+
                     // Captures the case where the y coordinate change is not significant enough to mean a nwe line change
                     if (positionRunningText != null && x <= xll && 
                         ((bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) && 
                         fontScaleNew > meanTextHeight * 0.9) )) {
                                // Do nothing
                         newLine = bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin);// && xChange <= 0;
+                        if (!newLine && fontScaleNew < meanTextHeight * SUBSCRIPT_DEVIANCE) {
+                            superscript = yChange > 0.01 && yChange < -lineSpacingEstimateMin;
+                        }
                     }
                     else if (positionRunningText != null && 
                         (x > xl && Math.abs(yChange) < .51)) {
                         // (x > xl && Math.abs(yChange) < 0.5 && Math.abs(fontScaleLast) >= Math.abs(fontScale))) {
                         // Do nothing
                         newLine = bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin);// && xChange <= 0;
-                        if (!newLine && Math.abs(fontScale) > Math.abs(fontScaleNew) && fontScale < meanTextHeight * 0.8) {
+                        if (!newLine && fontScaleNew < meanTextHeight * SUBSCRIPT_DEVIANCE) {
                             superscript = yChange > 0.01 && yChange < -lineSpacingEstimateMin;
                         }
                     }
@@ -496,17 +505,17 @@ export class PDFContentExtractor {
 
                         let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
                         let xmin : number = Math.round(xn - Math.abs(fontScale) * 4);
-                        if (fontScale < meanTextHeight * 0.9 && j % 2 === 0 && bounds(leftMarginEvenLikely, xmin, xmax)) {
+                        if (fontScale < meanTextHeight * BLOCKQUOTE_DEVIANCE && j % 2 === 0 && bounds(leftMarginEvenLikely, xmin, xmax)) {
                             runningText = `> ${runningText}`;
                         }
-                        else if (fontScale < meanTextHeight * 0.9 && j % 2 === 1 && bounds(leftMarginOddLikely, xmin, xmax)) {
+                        else if (fontScale < meanTextHeight * BLOCKQUOTE_DEVIANCE && j % 2 === 1 && bounds(leftMarginOddLikely, xmin, xmax)) {
                             runningText = `> ${runningText}`;
                         }
 
-                        superscript = Math.abs(fontScaleLast) > Math.abs(fontScale) && fontScale < meanTextHeight * 0.7 && yChange < -lineSpacingEstimateMin;
+                        superscript = Math.abs(fontScaleLast) > Math.abs(fontScale) && fontScale < meanTextHeight * SUBSCRIPT_DEVIANCE && yChange < -lineSpacingEstimateMin;
                     }
-                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log(`setTextMatrix ${i}`, meanTextHeight, completedObject, yn, yl, yScale, yChange, fontScaleLast, fontScale, fontScaleNew, bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) )
+                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                    //     console.log(`setTextMatrix ${i}`, meanTextHeight, completedObject, yn, yl, yScale, yChange, fontScaleLast, fontScale, fontScaleNew, bounds(yChange, lineSpacingEstimateMax, lineSpacingEstimateMin) )
                     xl = xn;
                     yl = yn;
                     xll = x;
@@ -1017,6 +1026,8 @@ export class PDFContentExtractor {
         }
         return { str, highlightAccumulate, highlightAccumulator, footnoteCounter, footnotes, annotationMetadata };
     }
+
+
 
     async extract(vault: Vault, settings: TopicLinkingSettings, statusBarItemEl: HTMLElement, metadata: Record<string, any>, citeproc: CiteprocFactory) {
 
