@@ -4,4 +4,3 @@
 
 {{ markdownOutput | safe }}
 
----

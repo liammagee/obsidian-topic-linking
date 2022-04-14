@@ -39,6 +39,8 @@
 		"@stdlib/types": "^0.0.13",
 		"citeproc": "^2.4.62",
 		"fast-png": "^6.1.0",
+		"lodash": "^4.17.21",
+		"markdown-to-txt": "^2.0.0",
 		"micromatch": "^4.0.4",
 		"nunjucks": "^3.2.3",
 		"pdfjs": "^2.4.7",

@@ -39,6 +39,7 @@ export interface TopicLinkingSettings {
     percentageTextToScan: number;
     wordSelectionRandom: boolean;
     topicFolderName: string;
+    topicOverwrite: boolean;
     topicIncludePattern: boolean;
     topicIncludeTimestamp: boolean;
     ldaIterations: number;
@@ -89,6 +90,7 @@ export const DEFAULT_SETTINGS: TopicLinkingSettings = {
     percentageTextToScan: 5,
     wordSelectionRandom: true,
     topicFolderName: 'Topics',
+    topicOverwrite: false,
     topicIncludePattern: false,
     topicIncludeTimestamp: false,
     ldaIterations: 1000,
@@ -468,6 +470,16 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
                 toggle.setValue(this.plugin.settings.topicIncludePattern)
                     .onChange(async (value) => {
                         this.plugin.settings.topicIncludePattern = value;
+                        await this.plugin.saveSettings();
+                    });
+            });
+        new Setting(containerEl)
+            .setName('Overwrite topics')
+            .setDesc('Select whether existing topic notes should be deleted.')
+            .addToggle((toggle) => {
+                toggle.setValue(this.plugin.settings.topicOverwrite)
+                    .onChange(async (value) => {
+                        this.plugin.settings.topicOverwrite = value;
                         await this.plugin.saveSettings();
                     });
             });
