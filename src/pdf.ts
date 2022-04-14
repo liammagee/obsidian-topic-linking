@@ -15,7 +15,7 @@ const ImageKind = {
     RGB_24BPP: 2,
     RGBA_32BPP: 3
 };
-const DEBUG_PAGE : number = 2;
+const DEBUG_PAGE : number = 0;
 const DEBUG_ITEM_START : number = 219;
 const DEBUG_ITEM_END : number = 299;
 
@@ -324,7 +324,10 @@ export class PDFContentExtractor {
         stateDocument.meanTextHeight = meanTextHeight;
 
         // Append the metadata
-        await this.addMetadataAndAnnotations(file, annotationMetadata, vault, newFile);
+        await this.addMetadataAndAnnotations(file, annotationMetadata, footnotes, vault, newFile);
+
+
+
 
 
         // Main loop through content
@@ -803,11 +806,10 @@ export class PDFContentExtractor {
         let footnoteContents : string = '';
         footnoteContents = this.templateFooter.render( { footnotes: footnotes } );
         await vault.append(newFile, footnoteContents);
-
     };
 
 
-    private async addMetadataAndAnnotations(file: TFile, annotationMetadata: any[], vault: Vault, newFile: TFile) {
+    private async addMetadataAndAnnotations(file: TFile, annotationMetadata: any[], footnotes: Record<number, string>, vault: Vault, newFile: TFile) {
         let metadataContents = ``;
         let itemMeta: any = {};
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
@@ -816,7 +818,7 @@ export class PDFContentExtractor {
             itemMeta.authors = itemMeta.creators.map((creator: any) => creator.lastName + ', ' + creator.firstName).join('; ');
         }
 
-        metadataContents += this.templateHeader.render({ filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata });
+        metadataContents += this.templateHeader.render({ filePath: file.path, item: itemMeta, annotationMetadata: annotationMetadata, footnotes: footnotes });
         // Append metadata, both any bibtex content and annotations
         await vault.append(newFile, metadataContents);
     }

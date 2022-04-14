@@ -1,24 +1,37 @@
-{% if item %}---
+{% if item and item.citationKey %}---
 ID: {{item.citationKey}}
-Title: {{item.title}}
-Authors: {{item.authors}}
-Abstract: {{item.abstractNote}}
+Title: "{{item.title}}"
+Authors: "{{item.authors}}"
+Abstract: "{{item.abstractNote}}"
 Published: {{item.date}}
-Publisher: {{item.extra}}
-Publication: {{item.publicationTitle}}
+Publisher: "{{item.extra}}"
+Publication: "{{item.publicationTitle}}"
 Volume: {{item.volume}}
 Issue: {{item.issue}}
 Pages: {{item.pages}}
-Reference: {{item.bib | striptags}}
+Reference: "{{item.bib | striptags}}"
 ---
 
 [Open in Zotero](zotero://select/library/items/{{item.select}}) {% endif %}
 Source: [[PDFs/{{filePath}}]]
 {% if annotationMetadata %}
 ---
+<div class="annotations">
 #### Annotations
+</div>
+
 {% for annotation in annotationMetadata %}
- - {{annotation.highlightText|safe}} [[#Page {{annotation.page}}]]. {% if annotation.commentText %} - **${{ annotation.commentText|safe }}** {% endif %} 
+> [!QUOTE] Highlight from [[#Page {{annotation.page}}]]
+> *{{annotation.highlightText|safe}}*
+>
+> {% if annotation.commentText %}**Note:** ${{ annotation.commentText|safe }} {% endif %}
 {% endfor %}
 {% endif %}
+
+
+{% for footnoteID, footnoteText in footnotes %}
+
+[^{{footnoteID}}]: {{ footnoteText }}
+{% endfor %}
+
 
