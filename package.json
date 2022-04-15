@@ -17,6 +17,7 @@
 	"license": "MIT",
 	"devDependencies": {
 		"@types/micromatch": "^4.0.2",
+		"@types/natural": "^5.1.1",
 		"@types/node": "^16.11.6",
 		"@types/nunjucks": "^3.2.1",
 		"@typescript-eslint/eslint-plugin": "^5.2.0",
@@ -42,6 +43,7 @@
 		"lodash": "^4.17.21",
 		"markdown-to-txt": "^2.0.0",
 		"micromatch": "^4.0.4",
+		"natural": "^5.1.13",
 		"nunjucks": "^3.2.3",
 		"pdfjs": "^2.4.7",
 		"sanitize-filename": "^1.6.3",

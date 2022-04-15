@@ -27,19 +27,6 @@ export default class TopicLinkingPlugin extends Plugin {
         await factory.initEngine(metadataCSL, this.settings);
         const styles = await factory.wrapper.getStyles();
 
-        // This command extracts PDFs to Markdown
-        this.addCommand({
-            id: 'extract-md-from-pdfs-command',
-            name: 'Extract Markdown from PDFs',
-            hotkeys: [{ modifiers: ["Mod", "Shift"], key: "a" }],
-            callback: async () => {
-
-                const { vault } = this.app;
-
-                new PDFContentExtractor().extract(vault, this.settings, statusBarItemEl, metadataBibtex, factory);
-
-            }
-        });
 
         // This command generates citeproc content
         this.addCommand({
@@ -96,7 +83,7 @@ export default class TopicLinkingPlugin extends Plugin {
             // hotkeys: [{ modifiers: ["Mod", "Shift"], key: "s" }],
             callback: async () => {
 
-                new TopicLinker().link(this.app, this.settings, statusBarItemEl);
+                new TopicLinker().link(this.app, this.settings, statusBarItemEl, metadataBibtex, factory);
             }
         });
 

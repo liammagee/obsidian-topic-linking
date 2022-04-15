@@ -467,14 +467,15 @@ export class PDFContentExtractor {
         // SECOND LOOP: Do content extraction
         for (let j = 1; j <= pdf.numPages && (DEBUG_PAGE_MAX <= 0 || j <= DEBUG_PAGE_MAX); j++) {
 
-            let statePage : PDFPageState = new PDFPageState();
 
-            stateDocument.currentPage = j;
             const page = await pdf.getPage(j);
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
             const textContent = await page.getTextContent();
             const commonObjs = page.commonObjs._objs;
+
+            stateDocument.currentPage = j;
+            let statePage : PDFPageState = new PDFPageState();
 
             let inCode = false;
 
@@ -813,11 +814,13 @@ export class PDFContentExtractor {
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
 
-                    let { counter, positionImg:PDFObjectPosition, md } = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i);
-                    displayCounter = counter;
-                    imagePaths[displayCounter] = md;
-                    objPositions.push(positionImg);
-    
+                    let imageResult = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i);
+                    if (imageResult != null) {
+                        let { counter, positionImg:PDFObjectPosition, md } = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i);
+                        displayCounter = counter;
+                        imagePaths[displayCounter] = md;
+                        objPositions.push(positionImg);
+                    }
                 }
             }
 
@@ -1137,7 +1140,6 @@ export class PDFContentExtractor {
         const fileSizeLimit = settings.pdfExtractFileSizeLimit;
         const chunkIfFileExceedsLimit = settings.pdfExtractChunkIfFileExceedsLimit;
         const pdfOverwrite = settings.pdfOverwrite === true;
-        const pdfTemplate = settings.templatePdfHeader;
         console.log(`File number limit: ${fileNumberLimit}`);
         console.log(`File size limit: ${fileSizeLimit}`);
         console.log(`Chunk if file exceeds limit: ${chunkIfFileExceedsLimit}`);

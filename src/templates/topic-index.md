@@ -10,9 +10,29 @@ Results based on scanning files that match file path '{{ topicPathPattern }}', s
 
 ## Reading List
 
-**Note:** to retain this list, copy to another location or check the 'Topic Folder Timestamp' option under 'Settings'.
+> [!NOTE] NOTE
+> To retain this list, copy to another location or check the 'Topic Folder Timestamp' option under 'Settings'.
 
 
-{%- for entry in entries %}
- - [ ] [[{{- entry }}]]
+{%- for docData in entries %}
+
+
+### {{ docData.title }}
+
+{%- if docData.bib != '' %}
+Citation: 
+{{- docData.bib | safe }}
+{%- endif %}
+
+Source: [[{{- docData.ref }}]]
+
+- [ ] Read?
+
+##### Distinctive Terms:
+
+| Term                 | Frequency    | Relative Frequency  |
+| :------------------- | -----------: | ------------------: |
+{%- for term in docData.terms %}
+| {{ term.term }} | {{ term.tf | round(2) }} | {{ term.tfidf | round(2) }} |
+{%- endfor %}
 {%- endfor %}

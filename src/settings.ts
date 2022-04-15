@@ -418,7 +418,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Fixed number of words')
-            .setDesc('Enter the number of words to extract from the text. Overrides \'Percentage of Total Text\' below.')
+            .setDesc('Enter the number of words to extract from the text. Overrides \'Percentage of Total Text\' below. Enter 0 to disable.')
             .addText((text) => {
                 text.inputEl.setAttribute("type", "number");
                 text.setPlaceholder('0-5000')
@@ -430,13 +430,13 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
             });
         new Setting(containerEl)
             .setName('Percentage of total text')
-            .setDesc('Enter the percentage of the total text to scan. ')
+            .setDesc('Enter the percentage of the total text to scan. Enter 0 to disable.')
             .addText((text) => {
                 text.inputEl.setAttribute("type", "number");
-                text.setPlaceholder('1-100')
+                text.setPlaceholder('0-100')
                     .setValue(this.plugin.settings.percentageTextToScan.toString())
                     .onChange(async (value) => {
-                        this.plugin.settings.percentageTextToScan = Math.min(Math.max(parseInt(value), 1), 100);
+                        this.plugin.settings.percentageTextToScan = Math.min(Math.max(parseInt(value), 0), 100);
                         await this.plugin.saveSettings();
                     });
             });
