@@ -13,25 +13,24 @@ Reference: "{{item.bib | striptags}}"
 ---
 
 [Open in Zotero](zotero://select/library/items/{{item.select}}) {% endif %}
-Source: [[PDFs/{{filePath}}]]
-{% if annotationMetadata %}
----
-<div class="annotations">
-#### Annotations
-</div>
+Source: [[{{filePath}}]]
 
-{% for annotation in annotationMetadata %}
+{%- if annotations and annotations.length > 1 %}
+
+---
+
+#### Annotations
+
+
+{% for annotation in annotations %}
 > [!QUOTE] Highlight from [[#Page {{annotation.page}}]]
 > *{{annotation.highlightText|safe}}*
 >
 > {% if annotation.commentText %}**Note:** ${{ annotation.commentText|safe }} {% endif %}
 {% endfor %}
-{% endif %}
+{%- endif %}
 
-
-{% for footnoteID, footnoteText in footnotes %}
+{%- for footnoteID, footnoteText in footnotes %}
 
 [^{{footnoteID}}]: {{ footnoteText }}
-{% endfor %}
-
-
+{%- endfor %}
