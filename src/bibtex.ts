@@ -5,6 +5,8 @@ import { TopicLinkingSettings } from './settings';
 export class BibtexParser {
 
     async loadJSON(app: App, settings: TopicLinkingSettings) {
+        if (settings.bibtexPath === null) 
+            return [];
         const bibtexPath = settings.bibtexPath.trim();
         try{
             const bibtexFile = <TFile>app.vault.getAbstractFileByPath(bibtexPath);

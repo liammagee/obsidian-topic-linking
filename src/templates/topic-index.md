@@ -16,7 +16,6 @@ Results based on scanning files that match file path '{{ topicPathPattern }}', s
 
 {%- for docData in entries %}
 
-
 ### {{ docData.title }}
 
 {%- if docData.bib != '' %}
@@ -24,15 +23,18 @@ Citation:
 {{- docData.bib | safe }}
 {%- endif %}
 
+
 Source: [[{{- docData.ref }}]]
 
 - [ ] Read?
 
 ##### Distinctive Terms:
 
-| Term                 | Frequency    | Relative Frequency  |
-| :------------------- | -----------: | ------------------: |
+
+| Term                 | Frequency    | Relative Frequency  | 
+| :------------------- | -----------: | ------------------: | 
 {%- for term in docData.terms %}
-| {{ term.term }} | {{ term.tf | round(2) }} | {{ term.tfidf | round(2) }} |
+| {{ term.term }} | {{ term.tf | round(2) }} | {{ term.bm25 | round(2) }} |
 {%- endfor %}
 {%- endfor %}
+
