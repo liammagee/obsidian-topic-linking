@@ -43,6 +43,7 @@ class PDFDocumentState {
     itemHighlights: any;
     highlightAccumulate: boolean;
     highlightAccumulator: string;
+    bufferText: string;
 
     constructor() {
         this.resetState();
@@ -56,6 +57,7 @@ class PDFDocumentState {
         this.highlightAccumulate = false;
         this.highlightAccumulator = '';
         this.annotationData = [];
+        this.bufferText = '';
     }
 
 
@@ -346,14 +348,13 @@ export class PDFContentExtractor {
             const opList = await page.getOperatorList();
 
             // For debugging
-            // if (j == DEBUG_PAGE) {
-            //     for (let i = 0; i < opList.fnArray.length; i++) {
-            //         const fnType : any = opList.fnArray[i];
-            //         const args : any = opList.argsArray[i];
-            //         console.log(fnType, args)
-            //     }
-            //     console.log(page)
-            // }
+            if (j == DEBUG_PAGE) {
+                for (let i = 0; i < opList.fnArray.length; i++) {
+                    const fnType : any = opList.fnArray[i];
+                    const args : any = opList.argsArray[i];
+                    console.log(fnType, args)
+                }
+            }
 
             yLast = 0;
             for (let i = 0; i < textContent.items.length; i++) {
@@ -384,14 +385,8 @@ export class PDFContentExtractor {
                     heightFrequencies[height] = str.trim().length;
                 else
                     heightFrequencies[height] += str.trim().length;
-                // if (heightFrequencies[height] === undefined) 
-                //     heightFrequencies[fontScale] = 1;
-                // else
-                //     heightFrequencies[height] += 1;
                 totalH += height;
                 counterH++;
-                // totalH += height;
-                // counterH++;
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
@@ -401,14 +396,10 @@ export class PDFContentExtractor {
                 //     console.log(str, itemHighlights);
 
                 // Handle any highlighting
-                ({ stateDocument, str } = this.highlightHandler(
-                                                        stateDocument, 
-                                                        str, 
-                                                        itemHighlights));
-
+                stateDocument.bufferText = str;
+                stateDocument = this.highlightHandler(stateDocument, itemHighlights);
             }
 
-        
             for (let i = 0; i < opList.fnArray.length; i++) {
                 const fnType : any = opList.fnArray[i];
                 const args : any = opList.argsArray[i];
@@ -502,10 +493,13 @@ export class PDFContentExtractor {
             let subscript : boolean = false;
             let superscript : boolean = false;
             let newLine : boolean = false;
+            let sameLineAddSpace : boolean = false;
 
             let fontSize : number = 1;
             let fontScale : number = 1;
             let fontScaleLast : number = 1;
+            let fontNameLast : string = null;
+            let fontFaceChange : boolean = false;
 
             let associatedItem = null;
 
@@ -539,9 +533,12 @@ export class PDFContentExtractor {
                 positionRunningText = new PDFObjectPosition(runningText, xn, yn, 0, 0);
                 fontScaleLast = fontScale;
                 fontScale = fontSize * yScale;
+                fontFaceChange = false;
                 
                 newLine = false;
+                sameLineAddSpace = false;
                 runningWidth = 0;
+                
 
                 return true;
             };
@@ -574,14 +571,19 @@ export class PDFContentExtractor {
                     // Get font properties
                     const font : any = commonObjs[args[0]];
                     const fontDataName = font.data.name;
-                    italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1);
-                    bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1);
+                    if (fontDataName !== fontNameLast && fontNameLast != null) 
+                        fontFaceChange = true;
+                    fontNameLast = fontDataName;
+                    italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
+                    bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
                     fontSize = parseFloat(args[1]);
+                    // Set this to 1, in case setTextMatrix is not called
+                    yScale = 1;
                 }
                 else if (fnType === this.pdfjs.OPS.setTextMatrix) {
                     xScale = args[0];
                     const x : number = args[4];
-                    let xn :number = x;// * xScale * fontSize;
+                    let xn :number = x;
                     let xChange : number = xn - (xl + width);
 
                     yScale = args[3];
@@ -611,7 +613,8 @@ export class PDFContentExtractor {
                     const withinLineBounds = bounds(yChange, stateDocument.lineSpacingEstimateMax, stateDocument.lineSpacingEstimateMin);
 
                     // Captures the case where the y coordinate change is not significant enough to mean a nwe line change
-                    if (positionRunningText != null && x <= xOffsetFromMargin && 
+                    if (positionRunningText != null && 
+                        x <= xOffsetFromMargin && 
                         withinLineBounds && 
                         Math.abs(fontScaleNew) > fontScale * NEWLINE_DEVIANCE)  {
                                // Do nothing
@@ -655,21 +658,19 @@ export class PDFContentExtractor {
                     }
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
                         console.log(`setTextMatrix ${i}`, 
-                        fontScale < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE, 
-                        fontScale, 
-                        stateDocument.modeTextHeight * NEWLINE_DEVIANCE, superscript, withinLineBounds, completedObject )
+                        x, xl, args )
+                    xOffsetFromMargin = xn;
                     xl = xn;
                     yl = yn;
-                    xOffsetFromMargin = xn;
                 }
                 else if (fnType === this.pdfjs.OPS.setLeadingMoveText || fnType === this.pdfjs.OPS.moveText) {
                     let x : number = args[0];
                     let y : number = args[1];
-                    xOffset = x * fontScale;
-                    yOffset = y * fontScale;
+                    xOffset = x * xScale;
+                    yOffset = y * yScale;
                     let xn :number = xl + xOffset;
                     let yn :number = yl + yOffset;
-                    let yChange : number = (yn - yl ) / fontScale;
+                    let yChange : number = (yn - yl ) / yScale;
                     newLine = false;
                     const withinLineBounds = bounds(yChange, stateDocument.lineSpacingEstimateMax, stateDocument.lineSpacingEstimateMin);
                     // Review these conditions:
@@ -700,8 +701,13 @@ export class PDFContentExtractor {
 
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
                         console.log(`setLeadingMoveText ${i}`, yChange, fontScale, x, y, xl, yl, xn, yn);
+                    if (Math.abs(yl - yn) > 1.0) 
+                        xOffsetFromMargin = xn;
                     xl = xn;
                     yl = yn;
+
+                    // if (x > 0)
+                    //     sameLineAddSpace = true;
 
                 }
                 else if (fnType === this.pdfjs.OPS.nextLine) {
@@ -730,11 +736,26 @@ export class PDFContentExtractor {
                     if (runningText.length == 0 && bufferText.trim().length == 0) 
                         bufferText = '';
 
-                    if (newLine && runningText.length > 0 && !runningText.endsWith(' ') && !runningText.endsWith('\n') && bufferText.trim().length > 0) 
+                    bufferText = bufferText.replace(/\s+/g, ' ');
+    
+                    if (newLine && 
+                        runningText.length > 0 && 
+                        !runningText.endsWith(' ') && 
+                        !runningText.endsWith('\n') && 
+                        bufferText.trim().length > 0) 
                         runningText += ' ';
-                    
-                    if (!newLine && (xl > runningWidth || xl < xOffsetFromMargin) && runningText.trim().length > 0 && !runningText.endsWith(' ') && !runningText.endsWith('==')) 
+                       
+                    if (!newLine && 
+                        (xl > runningWidth || xl < xOffsetFromMargin) && 
+                        runningText.trim().length > 0 && 
+                        !runningText.endsWith(' ') && 
+                        !runningText.endsWith('==')) 
                         runningText += ' '; 
+                    
+                    if (fontFaceChange) {
+                        runningText += ' '; 
+                        fontFaceChange = false;
+                    }
 
                     if (newLine && bufferText.trim().length == 0) {
                         runningText += '\n\n';
@@ -751,12 +772,14 @@ export class PDFContentExtractor {
                         bufferText = bufferText.substring(0, bufferText.length - 1);
                     // if (j == DEBUG_PAGE)  
                     //     console.log('showText', newLine, j, i, bufferText);
+                    // if (j == DEBUG_PAGE && (i >= 375 && i <= 390))
+                    //     console.log(`showText ${i}`, `%${bufferText}%`); //, `@${associatedItem.str}@`
 
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log(`showText ${i}`, runningWidth, xl, xOffsetFromMargin, pseudoKey, newLine, `%${bufferText}%`, `%${runningText}%`); //, `@${associatedItem.str}@`
+                        console.log(`showText ${i}`, xl, `%${bufferText}%`, `%${runningText.substring(0, 50)}%`); //, `@${associatedItem.str}@`
 
                     let tmpWidth = bufferText.length * fontSize * xScale;
-                    runningWidth = xl + tmpWidth / 3;
+                    runningWidth = xl + tmpWidth * 1.5;
 
                     if (subscript)
                         bufferText = `<sub>${bufferText}</sub> `;
@@ -783,21 +806,15 @@ export class PDFContentExtractor {
                     }
 
                     // Handle any highlighting
-                    let str = '';
-                    ({ stateDocument, str } = this.highlightHandler(
-                            stateDocument, 
-                            bufferText, 
-                            itemHighlights));
-    
-                    // stateDocument.footnoteCounter = footnoteCounter;
-                    // stateDocument.footnotes = footnotes;
-    
-                    // Causes problems. Remove when safe to do so.
-                    if (str.trim().length == 0) 
-                        str = '';
+                    stateDocument.bufferText = bufferText;
+                    stateDocument = this.highlightHandler(stateDocument, itemHighlights);
+                    let str = stateDocument.bufferText;
+                    
+                    // Can cause problems. Remove when safe to do so.
+                    // if (str.trim().length == 0) 
+                    //     str = '';
 
                     runningText += str;
-                    // runningText += bufferText;
 
                     if ('BIBLIOGRAPHY' === bufferText.trim()) {
                         stateDocument.inBibliography = true;
@@ -860,19 +877,17 @@ export class PDFContentExtractor {
 
 
             let mdStrings = objPositions.map((pos) => { return pos.format(); });
-            // mdStrings.splice(0, 0, `\n\n`);
-            // if (settings.pdfExtractIncludePagesAsHeadings) {
-            //     mdStrings.splice(1, 0, `---\n## Page ${j}`);
-            // }
+
             let mdString : string = mdStrings.join('\n\n');
             // Various fixes
             // mdString = mdString.replace(/(\w)\-\s(\w)/g, '$1$2');
-
             // Replace ligatures
             mdString = mdString.replaceAll('ﬂ', 'fl');
             mdString = mdString.replaceAll('ﬁ', 'fi');
+            // Replace repeating superscripts
             mdString = mdString.replaceAll('</sup> <sup>', ' ');
-            // mdString = mdString.replace(/(\ +)/g, ' ');
+            mdString = mdString.replace(/\n[\ ]*/g, '\n');
+            mdString = mdString.replace(/\ [\ ]+/g, ' ');
 
             if (j == DEBUG_PAGE)  {
                 // console.log("textContent", textContent);
@@ -1054,7 +1069,7 @@ export class PDFContentExtractor {
      * @param commentText 
      * @returns 
      */
-    processHighlights(stateDocument: PDFDocumentState, str: any, itemHighlights: any) {
+    processHighlights(stateDocument: PDFDocumentState, itemHighlights: any) {
         let {highlightStart, 
             highlightEnd, 
             highlightL, 
@@ -1063,6 +1078,7 @@ export class PDFContentExtractor {
             commentRef, 
             commentText} = itemHighlights;
         let highlightedText : string = '';
+        let str = stateDocument.bufferText;
         if (highlightStart) {
             let sl = str.length;
             if (sl > 0) {
@@ -1101,25 +1117,25 @@ export class PDFContentExtractor {
                 highlightedText += highlightText1;
             }
         }
-        return { stateDocument, str, highlightedText };
+        stateDocument.bufferText = str;
+        return { stateDocument, highlightedText };
     }
 
 
     private highlightHandler(stateDocument: PDFDocumentState, 
-                                str: any, 
                                 itemHighlights : any) {
         let highlightedText = '';
-        ({ stateDocument, str, highlightedText } = this.processHighlights(stateDocument, str, itemHighlights));
+        ({ stateDocument, highlightedText } = this.processHighlights(stateDocument, itemHighlights));
         if (stateDocument.highlightAccumulate) {
             if (highlightedText.length > 0)
                 stateDocument.highlightAccumulator += highlightedText + ' ';
             else
-                stateDocument.highlightAccumulator += str + ' ';
+                stateDocument.highlightAccumulator += stateDocument.bufferText + ' ';
         }
         if (itemHighlights.highlightEnd) {
             stateDocument.addAnnotation(itemHighlights.commentText );
         }
-        return { stateDocument, str };
+        return stateDocument;
     }
 
 
