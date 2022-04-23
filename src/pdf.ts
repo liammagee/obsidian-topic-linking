@@ -16,7 +16,7 @@ const ImageKind = {
     RGB_24BPP: 2,
     RGBA_32BPP: 3
 };
-const DEBUG_PAGE : number = 0;
+const DEBUG_PAGE : number = 1;
 const DEBUG_PAGE_MAX : number = 0;
 const DEBUG_ITEM_START : number = 0;
 const DEBUG_ITEM_END : number = 1000;
@@ -137,6 +137,42 @@ class PDFDocumentState {
 
 
 class PDFPageState {
+    inCode = false;
+
+    // Save images
+    displayCounter : number = 0;
+    imagePaths : Record<number, string> = [];
+
+    objPositions : PDFObjectPosition[] = [];
+    runningText : string = '';
+    positionRunningText : PDFObjectPosition = null;
+    positionImg : PDFObjectPosition = null;
+
+    // Coordinate variables
+    // Set scale to 1 by default (in case setTextMatrix is not called)
+    xScale : number = 1;
+    yScale : number = 1;
+    xl = 0;
+    yl = 0;
+    xOffset = 0;
+    yOffset = 0;
+    xOffsetFromMargin = 0;
+    // xOffsetFromMargin = j % 2 == 1 ? stateDocument.leftMarginOddLikely : stateDocument.leftMarginEvenLikely;
+    runningWidth : number = 0;
+
+    italic : boolean = false;
+    bold : boolean = false;
+    subscript : boolean = false;
+    superscript : boolean = false;
+    newLine : boolean = false;
+    sameLineAddSpace : boolean = false;
+
+    fontSize : number = 1;
+    fontScale : number = 1;
+    fontScaleLast : number = 1;
+    fontNameLast : string = null;
+    fontFaceChange : boolean = false;
+    associatedItem : any = null;
 
 }
 
@@ -147,6 +183,7 @@ class PDFObjectPosition {
     width: number; 
     height: number;
     obj: any;
+
     constructor(obj:any, x: number, y: number, width: number, height: number) {
         this.obj = obj;
         this.x = x;
@@ -199,22 +236,37 @@ export class PDFContentExtractor {
      * Makes a set of folders under the 'Generated/' folder, based on the file name.
      * @param file
      */
-    makeSubFolders = (vault: Vault, files : Array<TFile>) => {
+    makeSubFolders = async (vault: Vault, files : Array<TFile>) => {
+        const baseFolderImageLoc = normalizePath(`${this.generatedPath}images/`);
+        try {
+            await vault.createFolder(baseFolderImageLoc);
+        } 
+        catch (err) { // Ignore errors here - no way of testing for existing files
+            console.log("error making folder: " + baseFolderImageLoc);
+        }
+
         files.map(async (file) => {
             const subPath = this.subPathFactory(file, this.pdfPath.length);
             if (subPath.length > 0) {
+                const folderLoc = normalizePath(`${this.generatedPath}${subPath}`);
+                const folderImageLoc = normalizePath(`${folderLoc}images/`);
                 try {
-                    const folderLoc = normalizePath(`${this.generatedPath}${subPath}`);
                     await vault.createFolder(folderLoc);
                 } 
                 catch (err) { // Ignore errors here - no way of testing for existing files
+                }
+                try {
+                    await vault.createFolder(folderImageLoc);
+                } 
+                catch (err) { // Ignore errors here - no way of testing for existing files
+                    console.log("error making folder: " + folderImageLoc);
                 }
             }
         });
     };
 
 
-    captureImage = async (vault: Vault, page: any, args: any[], file: TFile, positionImg: PDFObjectPosition, displayCounter: number, j:number, i:number) => {
+    captureImage = async (vault: Vault, page: any, args: any[], file: TFile, positionImg: PDFObjectPosition, displayCounter: number, j:number, i:number, imagePath: string) => {
 
         try {
 
@@ -226,9 +278,9 @@ export class PDFContentExtractor {
                 if (file !== null)
                     bn = file.basename;
                 const imageName = `${bn}_${j}_${i+1}`.replace(/\s+/g, '');
-                const imagePath = normalizePath(`${this.generatedPath}${imageName}.png`);
-                const imageFile = <TFile> vault.getAbstractFileByPath(imagePath);
-                const md = `![${imageName}](${imagePath})`;
+                const imagePathFull = normalizePath(`${imagePath}${imageName}.png`);
+                const imageFile = <TFile> vault.getAbstractFileByPath(imagePathFull);
+                const md = `![${imageName}](${imagePathFull})`;
                 
                 positionImg.width = img.width;
                 positionImg.height = img.height;
@@ -276,7 +328,7 @@ export class PDFContentExtractor {
                 const buffer = Buffer.from(imgDataNew);
                 const pngInput = { data: buffer, width: img.width, height: img.height };
                 const png = await encode(pngInput);
-                await vault.createBinary(imagePath, png);
+                await vault.createBinary(imagePathFull, png);
                 return {
                     counter: displayCounter + 1,
                     positionImg: positionImg,
@@ -313,7 +365,9 @@ export class PDFContentExtractor {
 
         // Create a Markdown file for output
         const subPath = this.subPathFactory(file, this.pdfPath.length);
-        const fileName: string = normalizePath(`${this.generatedPath}${subPath}${file.basename}.md`);
+        const fullPath = `${this.generatedPath}${subPath}`;
+        const imagePath = `${fullPath}images/`;
+        const fileName: string = normalizePath(`${fullPath}${file.basename}.md`);
         let newFile = <TFile> vault.getAbstractFileByPath(fileName);
         if (newFile !== null)
             await vault.modify(newFile, '');
@@ -326,7 +380,6 @@ export class PDFContentExtractor {
         // For annotation metadata
         let annotationMetadata : any[] = [];
         let annotatedObjs : any = {};
-
 
         // For margins
         let leftMarginsOdd : Record<number, number> = {},
@@ -826,14 +879,15 @@ export class PDFContentExtractor {
                     const x : number = args[4];
                     const y : number = args[5];
                     const yAdj : number = y + yScale;
+                    fontScale *= yScale;
                     positionImg = new PDFObjectPosition(null, x, yAdj, 0, 0);
                 }
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
 
-                    let imageResult = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i);
+                    let imageResult = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i, imagePath);
                     if (imageResult != null) {
-                        let { counter, positionImg:PDFObjectPosition, md } = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i);
+                        let { counter, positionImg:PDFObjectPosition, md } = imageResult;
                         displayCounter = counter;
                         imagePaths[displayCounter] = md;
                         objPositions.push(positionImg);
@@ -884,6 +938,8 @@ export class PDFContentExtractor {
             // Replace ligatures
             mdString = mdString.replaceAll('ﬂ', 'fl');
             mdString = mdString.replaceAll('ﬁ', 'fi');
+            mdString = mdString.replaceAll('fi ', 'fi');
+            mdString = mdString.replaceAll('fl ', 'fl');
             // Replace repeating superscripts
             mdString = mdString.replaceAll('</sup> <sup>', ' ');
             mdString = mdString.replace(/\n[\ ]*/g, '\n');
@@ -1152,6 +1208,7 @@ export class PDFContentExtractor {
         this.generatedPath = settings.generatedPath;
         this.pdfPath = settings.pdfPath;
         this.metadata = metadata;
+        
         const fileNumberLimit = settings.pdfExtractFileNumberLimit;
         const fileSizeLimit = settings.pdfExtractFileSizeLimit;
         const chunkIfFileExceedsLimit = settings.pdfExtractChunkIfFileExceedsLimit;

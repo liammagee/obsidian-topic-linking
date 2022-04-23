@@ -49,6 +49,28 @@ export class TfIdf {
         return dfs;
     }
 
+
+    _sorted(results: any[][], sortKey : string = 'bm25') {
+        if (results.length == 0 || results[0].length == 0 || results[0][0] == null || results[0][0][sortKey] == null)
+            throw new Error("Empty results or invalid sort key");
+        let sortedResults : any[][] = [];
+        for (let resultsDoc of results) {
+            let sortedResultsDoc : any[] = [];
+            sortedResultsDoc = resultsDoc.sort((a, b) => b[sortKey] - a[sortKey]);
+            sortedResults.push(sortedResultsDoc);
+        }
+        return sortedResults; 
+    }
+
+    _top(results: any[][], topN:number) {
+        let sortedResults : any[][] = [];
+        for (let resultsDoc of results) {
+            let resultsTopN : any[] = resultsDoc.slice(0, topN);
+            sortedResults.push(resultsTopN);
+        }
+        return sortedResults;         
+    }
+
     _idfs(mix:number) {
         let dfs : Record<string, number> = this._dfs();
         let n = this.documents.length;
@@ -102,27 +124,6 @@ export class TfIdf {
         if (topN != null && topN > 0)
             results = this._top(results, topN);
         return results;  
-    }
-
-    _sorted(results: any[][], sortKey : string = 'bm25') {
-        if (results.length == 0 || results[0].length == 0 || results[0][0] == null || results[0][0][sortKey] == null)
-            throw new Error("Empty results or invalid sort key");
-        let sortedResults : any[][] = [];
-        for (let resultsDoc of results) {
-            let sortedResultsDoc : any[] = [];
-            sortedResultsDoc = resultsDoc.sort((a, b) => b[sortKey] - a[sortKey]);
-            sortedResults.push(sortedResultsDoc);
-        }
-        return sortedResults; 
-    }
-
-    _top(results: any[][], topN:number) {
-        let sortedResults : any[][] = [];
-        for (let resultsDoc of results) {
-            let resultsTopN : any[] = resultsDoc.slice(0, topN);
-            sortedResults.push(resultsTopN);
-        }
-        return sortedResults;         
     }
 
 }
