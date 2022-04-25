@@ -16,7 +16,7 @@ const ImageKind = {
     RGB_24BPP: 2,
     RGBA_32BPP: 3
 };
-const DEBUG_PAGE : number = 2;
+const DEBUG_PAGE : number = 0;
 const DEBUG_PAGE_MAX : number = 0;
 const DEBUG_ITEM_START : number = 0;
 const DEBUG_ITEM_END : number = 1000;
@@ -551,7 +551,7 @@ export class PDFContentExtractor {
 
             const completeObject = (xn : number, yn: number, width: number, height: number) => {
                 if (runningText.trim() !== '') {
-                    
+
                     if (['bibliography', 'references'].includes(runningText.trim().toLowerCase()))
                         stateDocument.inBibliography = true;
 
