@@ -17,7 +17,7 @@ export class TfIdf {
         this.documentLengths.push(doc.length);
     }
 
-    _tfs() {
+    private tfs() {
         let tfs : Record<string, number>[] = [];
         for (let tokens of this.documents) {
             let tf : Record<string, number> = {};
@@ -33,7 +33,7 @@ export class TfIdf {
         return tfs;
     }
 
-    _dfs() {
+    private dfs() {
         let dfs : Record<string, number> = {};
         let n : number = this.documents.length;
         for (let i = 0; i < n; i++) {
@@ -50,7 +50,7 @@ export class TfIdf {
     }
 
 
-    _sorted(results: any[][], sortKey : string = 'bm25') {
+    private sorted(results: any[][], sortKey : string = 'bm25') {
         if (results.length == 0 || results[0].length == 0 || results[0][0] == null || results[0][0][sortKey] == null)
             throw new Error("Empty results or invalid sort key");
         let sortedResults : any[][] = [];
@@ -62,7 +62,7 @@ export class TfIdf {
         return sortedResults; 
     }
 
-    _top(results: any[][], topN:number) {
+    private top(results: any[][], topN:number) {
         let sortedResults : any[][] = [];
         for (let resultsDoc of results) {
             let resultsTopN : any[] = resultsDoc.slice(0, topN);
@@ -71,8 +71,8 @@ export class TfIdf {
         return sortedResults;         
     }
 
-    _idfs(mix:number) {
-        let dfs : Record<string, number> = this._dfs();
+    private idfs(mix:number) {
+        let dfs : Record<string, number> = this.dfs();
         let n = this.documents.length;
         let idfs : Record<string, number> = {};
         Object.keys(dfs).forEach((token) => {
@@ -87,8 +87,8 @@ export class TfIdf {
 
 
     tfidfs(k: number = 1.0, b: number = 0.75, mix: number = 0.0, sortKey: string = 'bm25', topN: number = 10) {
-        let tfs = this._tfs();
-        let idfs = this._idfs(mix);
+        let tfs = this.tfs();
+        let idfs = this.idfs(mix);
         let tfidfs : Record<string, number>[] = [];
         let results : any[] = [];
 
@@ -120,9 +120,9 @@ export class TfIdf {
             tfidfs.push(tfidfRec);
         }
         if (sortKey != null) 
-            results = this._sorted(results, sortKey);
+            results = this.sorted(results, sortKey);
         if (topN != null && topN > 0)
-            results = this._top(results, topN);
+            results = this.top(results, topN);
         return results;  
     }
 

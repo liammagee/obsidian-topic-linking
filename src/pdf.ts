@@ -16,10 +16,16 @@ const ImageKind = {
     RGB_24BPP: 2,
     RGBA_32BPP: 3
 };
-const DEBUG_PAGE : number = 1;
+const DEBUG_PAGE : number = 2;
 const DEBUG_PAGE_MAX : number = 0;
 const DEBUG_ITEM_START : number = 0;
 const DEBUG_ITEM_END : number = 1000;
+
+const NEWLINE_DEVIANCE = 0.9;
+const BLOCKQUOTE_DEVIANCE = 0.97;
+const SUBSCRIPT_DEVIANCE = 0.8;
+const Y_JITTER = 0.01;
+
 
 // Constants for detecting line change
 // Work on a way to calculate this dynamically for double-spaced texts
@@ -172,7 +178,23 @@ class PDFPageState {
     fontScaleLast : number = 1;
     fontNameLast : string = null;
     fontFaceChange : boolean = false;
-    associatedItem : any = null;
+    transform : any = null;
+
+    associatedTextContent : any = null;
+
+    resetPageState() {
+        this.fontScaleLast = this.fontScale;
+        this.fontScale = this.fontSize * this.yScale;
+        this.fontFaceChange = false;
+
+        this.newLine = false;
+        this.sameLineAddSpace = false;
+        this.runningWidth = 0;
+    }
+
+    // Helper functions
+    // These make use of local variables, need to remain in scope
+    bounds = (test:number, min:number, max:number) =>  (test >= min && test <= max);
 
 }
 
@@ -266,75 +288,62 @@ export class PDFContentExtractor {
     };
 
 
-    captureImage = async (vault: Vault, page: any, args: any[], file: TFile, positionImg: PDFObjectPosition, displayCounter: number, j:number, i:number, imagePath: string) => {
+    captureImage = async (vault: Vault, img: any, file: TFile, statePage: PDFPageState, j:number, i:number, imagePath: string) => {
 
         try {
 
-            let img = page.objs.get(args[0])
             // Convert and save image to a PNG
-            if (img != null) { 
+            const yScale : number = statePage.transform[3];
+            const x = statePage.transform[4];
+            const y = statePage.transform[5];
+            const yAdj : number = y + yScale;
                 
-                let bn = '';
-                if (file !== null)
-                    bn = file.basename;
-                const imageName = `${bn}_${j}_${i+1}`.replace(/\s+/g, '');
-                const imagePathFull = normalizePath(`${imagePath}${imageName}.png`);
-                const imageFile = <TFile> vault.getAbstractFileByPath(imagePathFull);
-                const md = `![${imageName}](${imagePathFull})`;
-                
-                positionImg.width = img.width;
-                positionImg.height = img.height;
-                positionImg.obj = md;
+            const bn = (file !== null) ? file.basename : '';
+            const imageName = `${bn}_${j}_${i+1}`.replace(/\s+/g, '');
+            const imagePathFull = normalizePath(`${imagePath}${imageName}.png`);
+            const imageFile = <TFile> vault.getAbstractFileByPath(imagePathFull);
+            const markdown = `![${imageName}](${imagePathFull})`;
+            const positionImg = new PDFObjectPosition(markdown, x, yAdj, img.width, img.height);
 
-                displayCounter++;
-                if (imageFile != null)
-                    return {
-                        counter: displayCounter + 1,
-                        positionImg: positionImg,
-                        md: md
-                    };
-                // For the moment, don't overwrite images - skip the following logic
-                    // await vault.delete(imageFile);
+            if (imageFile != null)
+                return positionImg;
+            // For the moment, don't overwrite images - skip the following logic
+            // await vault.delete(imageFile);
 
-                let imgDataNew : number[] = [];
-                const imgSize : number = img.data.length;
-                if (img.kind === ImageKind.GRAYSCALE_1BPP) {
-                    const imgSizeNew = imgSize / 1 * 4;
-                    imgDataNew = new Array<number>(imgSizeNew);
-                    for (let k = 0, l = 0; k < imgSize; k++, l+=4) {
-                        imgDataNew[l] = img.data[k];
-                        imgDataNew[l+1] = img.data[k];
-                        imgDataNew[l+2] = img.data[k];
-                        imgDataNew[l+3] = 255;
-                    }
-                }
-                else if (img.kind === ImageKind.RGB_24BPP) {
-                    const imgSizeNew = imgSize / 3 * 4;
-                    imgDataNew = new Array<number>(imgSizeNew);
-                    for (let k = 0, l = 0; k < imgSize; k++, l++) {
-                        imgDataNew[l] = img.data[k];
-                        if (k % 3 == 2) {
-                            imgDataNew[(l++)+1] = 255;
-                        }
-                    }
-                }
-                else if (img.kind === ImageKind.RGBA_32BPP) {
-                    imgDataNew = new Array<number>(imgSize);
-                    for (let k = 0; k < imgSize; k++) {
-                        imgDataNew[k] = img.data[k];
-                    }
-                }
-
-                const buffer = Buffer.from(imgDataNew);
-                const pngInput = { data: buffer, width: img.width, height: img.height };
-                const png = await encode(pngInput);
-                await vault.createBinary(imagePathFull, png);
-                return {
-                    counter: displayCounter + 1,
-                    positionImg: positionImg,
-                    md: md
+            let imgDataNew : number[] = [];
+            const imgSize : number = img.data.length;
+            if (img.kind === ImageKind.GRAYSCALE_1BPP) {
+                const imgSizeNew = imgSize / 1 * 4;
+                imgDataNew = new Array<number>(imgSizeNew);
+                for (let k = 0, l = 0; k < imgSize; k++, l+=4) {
+                    imgDataNew[l] = img.data[k];
+                    imgDataNew[l+1] = img.data[k];
+                    imgDataNew[l+2] = img.data[k];
+                    imgDataNew[l+3] = 255;
                 }
             }
+            else if (img.kind === ImageKind.RGB_24BPP) {
+                const imgSizeNew = imgSize / 3 * 4;
+                imgDataNew = new Array<number>(imgSizeNew);
+                for (let k = 0, l = 0; k < imgSize; k++, l++) {
+                    imgDataNew[l] = img.data[k];
+                    if (k % 3 == 2) {
+                        imgDataNew[(l++)+1] = 255;
+                    }
+                }
+            }
+            else if (img.kind === ImageKind.RGBA_32BPP) {
+                imgDataNew = new Array<number>(imgSize);
+                for (let k = 0; k < imgSize; k++) {
+                    imgDataNew[k] = img.data[k];
+                }
+            }
+
+            const buffer = Buffer.from(imgDataNew);
+            const pngInput = { data: buffer, width: img.width, height: img.height };
+            const png = await encode(pngInput);
+            await vault.createBinary(imagePathFull, png);
+            return positionImg;
         }
         catch (e) {
             console.log(`Failed to process image in ${file.basename}. Error: ${e}.`);
@@ -457,8 +466,6 @@ export class PDFContentExtractor {
                 const fnType : any = opList.fnArray[i];
                 const args : any = opList.argsArray[i];
                 if (fnType === this.pdfjs.OPS.setTextMatrix) {
-                    let xScale = args[0];
-                    let yScale = args[3];
                     const x : number = args[4];
                     const y : number = args[5];
                     if (j % 2 === 0) 
@@ -521,16 +528,10 @@ export class PDFContentExtractor {
             stateDocument.currentPage = j;
             let statePage : PDFPageState = new PDFPageState();
 
-            let inCode = false;
-
             // Save images
-            let displayCounter : number = 0;
-            let imagePaths : Record<number, string> = [];
-
             let objPositions : PDFObjectPosition[] = [];
             let runningText : string = '';
             let positionRunningText : PDFObjectPosition = null;
-            let positionImg : PDFObjectPosition = null;
 
             // Coordinate variables
             // Set scale to 1 by default (in case setTextMatrix is not called)
@@ -541,33 +542,22 @@ export class PDFContentExtractor {
             let xOffsetFromMargin = j % 2 == 1 ? stateDocument.leftMarginOddLikely : stateDocument.leftMarginEvenLikely;
             let runningWidth : number = 0;
 
-            let italic : boolean = false;
-            let bold : boolean = false;
-            let subscript : boolean = false;
-            let superscript : boolean = false;
             let newLine : boolean = false;
-            let sameLineAddSpace : boolean = false;
 
             let fontSize : number = 1;
             let fontScale : number = 1;
             let fontScaleLast : number = 1;
-            let fontNameLast : string = null;
-            let fontFaceChange : boolean = false;
 
-            let associatedItem = null;
-
-            // Helper functions
-            // These make use of local variables, need to remain in scope
-            const bounds = (test:number, min:number, max:number) =>  (test >= min && test <= max);
 
             const completeObject = (xn : number, yn: number, width: number, height: number) => {
                 if (runningText.trim() !== '') {
-                    if (runningText === 'BIBLIOGRAPHY')
+                    
+                    if (['bibliography', 'references'].includes(runningText.trim().toLowerCase()))
                         stateDocument.inBibliography = true;
 
                     // Treat as a heading, and calculate the heading size by the height of the line
-                    if (j == DEBUG_PAGE)
-                        console.log("fontScale", fontScale);
+                    // if (j == DEBUG_PAGE)
+                    //     console.log("fontScale", fontScale, fontSize, yScale);
                     let { headingPadding, heading, headingTrail } = this.headingHandler(fontScale, stateDocument.modeTextHeight, runningText);
                     runningText = `${headingPadding}${heading}${runningText}${headingTrail}`;
 
@@ -584,33 +574,70 @@ export class PDFContentExtractor {
                         runningText = `==${runningText}`;
                 }
                 positionRunningText = new PDFObjectPosition(runningText, xn, yn, 0, 0);
+
+                statePage.resetPageState();
                 fontScaleLast = fontScale;
                 fontScale = fontSize * yScale;
-                fontFaceChange = false;
+                statePage.fontFaceChange = false;
                 
                 newLine = false;
-                sameLineAddSpace = false;
                 runningWidth = 0;
-                
 
                 return true;
             };
-            // if (j == DEBUG_PAGE)  
-            //     console.log("annotatedObjs", annotatedObjs)
 
             if (positionRunningText !== null) {
                 positionRunningText.obj = runningText;
                 objPositions.push(positionRunningText);
             }
-                            
+
+            /*
+            // Font retrieval doesn't work reliably
+            for (let i = 0; i < textContent.items.length; i++) {
+                const item = textContent.items[i];
+                let { str, dir, width, height, transform, fontName, hasEOL } = item;
+                if (j == DEBUG_PAGE) {
+                    console.log(" PROCESSING TEXT ITEMS");
+                    console.log(item);
+                }
+                let x = transform[4];
+                let y = transform[5];
+                let { headingPadding, heading, headingTrail } = this.headingHandler(fontScale, stateDocument.modeTextHeight, str);
+                let font:any = Object.values(commonObjs).filter((obj:any) => obj.data.name === fontName)[0];
+                    const fontDataName = font.data.name;
+                let italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
+                let bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
+                const leadingSpace = str.startsWith(' ') ? ' ' : '';
+                const trailingSpace = str.endsWith(' ') ? ' ' : '';
+                if (bold && str.trim().length > 0) {
+                    if (runningText.endsWith('**')) {
+                        runningText = runningText.substring(0, runningText.length - 2);
+                        str = `${str.trim()}**${trailingSpace}`;
+                    }
+                    else 
+                        str = `**${str.trim()}**${trailingSpace}`;
+                }
+                if (italic && str.trim().length > 0) {
+                    if (runningText.endsWith('*')) {
+                        runningText = runningText.substring(0, runningText.length - 1);
+                        str = `${str.trim()}*${trailingSpace}`;
+                    }
+                    else
+                        str = `*${str.trim()}*${trailingSpace}`;
+                }
+                positionRunningText = new PDFObjectPosition(str, x, y, width, height);
+                objPositions.push(positionRunningText);
+            }
+            */
+
             // Loop through operators
             for (let i = 0; i < opList.fnArray.length; i++) {
                 const fnType : any = opList.fnArray[i];
                 const args : any = opList.argsArray[i];
                 
                 const pseudoKey = Math.round(j * 1000000 + yl * 1000 + xl);
-                associatedItem = annotatedObjs[pseudoKey] !== undefined ? annotatedObjs[pseudoKey] : associatedItem;
-                let width = (associatedItem !== null) ? associatedItem.width : 0;
+                statePage.associatedTextContent = annotatedObjs[pseudoKey] !== undefined ? annotatedObjs[pseudoKey] : statePage.associatedTextContent;
+                let width = (statePage.associatedTextContent !== null) ? statePage.associatedTextContent.width : 0;
                 
                 if (fnType === this.pdfjs.OPS.beginText) {
                     // Begin text
@@ -624,14 +651,20 @@ export class PDFContentExtractor {
                     // Get font properties
                     const font : any = commonObjs[args[0]];
                     const fontDataName = font.data.name;
-                    if (fontDataName !== fontNameLast && fontNameLast != null) 
-                        fontFaceChange = true;
-                    fontNameLast = fontDataName;
-                    italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
-                    bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
+                    if (fontDataName !== statePage.fontNameLast && statePage.fontNameLast != null) 
+                        statePage.fontFaceChange = true;
+                    statePage.fontNameLast = fontDataName;
+
                     fontSize = parseFloat(args[1]);
                     // Set this to 1, in case setTextMatrix is not called
-                    yScale = 1;
+                    if (yScale <= 0)
+                        yScale = 1;
+
+                    statePage.italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
+                    statePage.bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
+                    statePage.fontSize = parseFloat(args[1]);
+                    // Set this to 1, in case setTextMatrix is not called
+                    statePage.yScale = 1;
                 }
                 else if (fnType === this.pdfjs.OPS.setTextMatrix) {
                     xScale = args[0];
@@ -645,8 +678,12 @@ export class PDFContentExtractor {
                     let yn :number = y * ySign;
 
                     newLine = false;
-                    superscript = false;
-                    subscript = false;
+                    statePage.superscript = false;
+                    statePage.subscript = false;
+                    
+                    // INSERTED
+                    fontScale = fontSize * yScale;
+
                     let fontScaleNew = fontSize * yScale;
                     let fontScaleMax = fontScale;
                     if (Math.abs(fontScaleMax) < Math.abs(fontScaleLast))
@@ -655,15 +692,7 @@ export class PDFContentExtractor {
                         fontScaleMax = fontScaleNew;
                     let yChange : number = (yn - yl) / (fontScaleMax * ySign);
 
-
-                    let completedObject = false;
-
-                    const NEWLINE_DEVIANCE = 0.9;
-                    const BLOCKQUOTE_DEVIANCE = 0.97;
-                    const SUBSCRIPT_DEVIANCE = 0.8;
-                    const Y_JITTER = 0.01;
-
-                    const withinLineBounds = bounds(yChange, stateDocument.lineSpacingEstimateMax, stateDocument.lineSpacingEstimateMin);
+                    const withinLineBounds = statePage.bounds(yChange, stateDocument.lineSpacingEstimateMax, stateDocument.lineSpacingEstimateMin);
 
                     // Captures the case where the y coordinate change is not significant enough to mean a nwe line change
                     if (positionRunningText != null && 
@@ -673,7 +702,7 @@ export class PDFContentExtractor {
                                // Do nothing
                         newLine = withinLineBounds;// && xChange <= 0;
                         if (!newLine && fontScaleNew < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE) {
-                            superscript = yChange > Y_JITTER && 
+                            statePage.superscript = yChange > Y_JITTER && 
                                             yChange < -stateDocument.lineSpacingEstimateMin;
                         }
                     }
@@ -683,35 +712,33 @@ export class PDFContentExtractor {
                         // Do nothing
                         newLine = withinLineBounds;// && xChange <= 0;
                         if (!newLine && fontScaleNew < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE) {
-                            superscript = yChange > Y_JITTER && 
+                            statePage.superscript = yChange > Y_JITTER && 
                                             yChange < -stateDocument.lineSpacingEstimateMin;
                         }
                     }
                     else {
                         completeObject(xn, yn, width, yl);
-                        completedObject = true;
 
                         let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
                         let xmin : number = Math.round(xn - Math.abs(fontScale) * 4);
                         if (fontScale < stateDocument.modeTextHeight * BLOCKQUOTE_DEVIANCE && 
                             j % 2 === 0 && 
-                            bounds(stateDocument.leftMarginEvenLikely, xmin, xmax)) {
+                            statePage.bounds(stateDocument.leftMarginEvenLikely, xmin, xmax)) {
                             runningText = `> ${runningText}`;
                         }
                         else if (fontScale < stateDocument.modeTextHeight * BLOCKQUOTE_DEVIANCE && 
                             j % 2 === 1 && 
-                            bounds(stateDocument.leftMarginOddLikely, xmin, xmax)) {
+                            statePage.bounds(stateDocument.leftMarginOddLikely, xmin, xmax)) {
                             runningText = `> ${runningText}`;
                         }
 
-                        superscript = //Math.abs(fontScaleLast) > Math.abs(fontScale) && 
+                        statePage.superscript = //Math.abs(fontScaleLast) > Math.abs(fontScale) && 
                                     Math.abs(fontScale) < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE ;
                                     // && yChange > 0.01;
                                     //  && yChange < -stateDocument.lineSpacingEstimateMin;
                     }
-                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log(`setTextMatrix ${i}`, 
-                        x, xl, args )
+                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                    //     console.log(`setTextMatrix ${i}`, x, xl, args )
                     xOffsetFromMargin = xn;
                     xl = xn;
                     yl = yn;
@@ -725,7 +752,10 @@ export class PDFContentExtractor {
                     let yn :number = yl + yOffset;
                     let yChange : number = (yn - yl ) / yScale;
                     newLine = false;
-                    const withinLineBounds = bounds(yChange, stateDocument.lineSpacingEstimateMax, stateDocument.lineSpacingEstimateMin);
+
+                    let withinLineBounds = statePage.bounds(yChange, 
+                                stateDocument.lineSpacingEstimateMax, 
+                                stateDocument.lineSpacingEstimateMin);
                     // Review these conditions:
                     // 1. Next line, normal text
                     // 2. Next line, inside bibliography
@@ -752,8 +782,8 @@ export class PDFContentExtractor {
                         completeObject(xn, yn, width, yl);
                     }
 
-                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log(`setLeadingMoveText ${i}`, yChange, fontScale, x, y, xl, yl, xn, yn);
+                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                    //     console.log(`setLeadingMoveText ${i}`, yChange, fontScale, x, y, xl, yl, xn, yn);
                     if (Math.abs(yl - yn) > 1.0) 
                         xOffsetFromMargin = xn;
                     xl = xn;
@@ -805,9 +835,9 @@ export class PDFContentExtractor {
                         !runningText.endsWith('==')) 
                         runningText += ' '; 
                     
-                    if (fontFaceChange) {
+                    if (statePage.fontFaceChange) {
                         runningText += ' '; 
-                        fontFaceChange = false;
+                        statePage.fontFaceChange = false;
                     }
 
                     if (newLine && bufferText.trim().length == 0) {
@@ -826,22 +856,22 @@ export class PDFContentExtractor {
                     // if (j == DEBUG_PAGE)  
                     //     console.log('showText', newLine, j, i, bufferText);
                     // if (j == DEBUG_PAGE && (i >= 375 && i <= 390))
-                    //     console.log(`showText ${i}`, `%${bufferText}%`); //, `@${associatedItem.str}@`
+                    //     console.log(`showText ${i}`, `%${bufferText}%`); //, `@${statePage.associatedTextContent.str}@`
 
-                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log(`showText ${i}`, xl, `%${bufferText}%`, `%${runningText.substring(0, 50)}%`); //, `@${associatedItem.str}@`
+                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                    //     console.log(`showText ${i}`, xl, `%${bufferText}%`, `%${runningText.substring(0, 50)}%`); //, `@${statePage.associatedTextContent.str}@`
 
                     let tmpWidth = bufferText.length * fontSize * xScale;
                     runningWidth = xl + tmpWidth * 1.5;
 
-                    if (subscript)
+                    if (statePage.subscript)
                         bufferText = `<sub>${bufferText}</sub> `;
-                    else if (superscript)
+                    else if (statePage.superscript)
                         bufferText = `<sup>${bufferText}</sup> `;
 
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
-                    if (bold && bufferText.trim().length > 0) {
+                    if (statePage.bold && bufferText.trim().length > 0) {
                         if (runningText.endsWith('**')) {
                             runningText = runningText.substring(0, runningText.length - 2);
                             bufferText = `${bufferText.trim()}**${trailingSpace}`;
@@ -849,7 +879,7 @@ export class PDFContentExtractor {
                         else 
                             bufferText = `**${bufferText.trim()}**${trailingSpace}`;
                     }
-                    if (italic && bufferText.trim().length > 0) {
+                    if (statePage.italic && bufferText.trim().length > 0) {
                         if (runningText.endsWith('*')) {
                             runningText = runningText.substring(0, runningText.length - 1);
                             bufferText = `${bufferText.trim()}*${trailingSpace}`;
@@ -874,23 +904,24 @@ export class PDFContentExtractor {
                     }
                 }
                 else if (fnType === this.pdfjs.OPS.transform && settings.pdfExtractIncludeImages) {
-                    const xScale : number = args[0];
+                    statePage.transform = args;
                     const yScale : number = args[3];
-                    const x : number = args[4];
-                    const y : number = args[5];
-                    const yAdj : number = y + yScale;
                     fontScale *= yScale;
-                    positionImg = new PDFObjectPosition(null, x, yAdj, 0, 0);
                 }
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
 
-                    let imageResult = await this.captureImage(vault, page, args, file, positionImg, displayCounter, j, i, imagePath);
-                    if (imageResult != null) {
-                        let { counter, positionImg:PDFObjectPosition, md } = imageResult;
-                        displayCounter = counter;
-                        imagePaths[displayCounter] = md;
-                        objPositions.push(positionImg);
+                    try {
+                        let img = page.objs.get(args[0]);
+                        if (img != null) {
+                            let imageResult = await this.captureImage(vault, img, file, statePage, j, i, imagePath);
+                            if (imageResult != null) 
+                                objPositions.push(imageResult);
+                        }
+    
+                    }
+                    catch (e) {
+                        console.log(`Error ${e}, working with ${file} on page ${j}, item ${i}`);
                     }
                 }
             }
@@ -902,6 +933,7 @@ export class PDFContentExtractor {
                 positionRunningText.obj = runningText;
                 objPositions.push(positionRunningText);
             }
+
 
             // Sort objects by x position, where a.x must be greater than b.x + b.width, then by y position.
             /*
@@ -1143,8 +1175,8 @@ export class PDFContentExtractor {
                     hl += 1;
                 else if (hl > 0 && str.charAt(hl - 1) !== ' ') 
                     hl -= 1;
-                let highlightText1 = str.substr(0, hl);
-                let highlightText2 = str.substr(hl);
+                let highlightText1 = str.substring(0, hl);
+                let highlightText2 = str.substring(hl);
 
                 str = highlightText1 + `==${highlightText2}`;
                 highlightedText += highlightText2;
@@ -1159,8 +1191,8 @@ export class PDFContentExtractor {
                     hr += 2;
                 else if (hr < sl)
                     hr -= 1;
-                let highlightText1 = str.substr(0, hr);
-                let highlightText2 = str.substr(hr);
+                let highlightText1 = str.substring(0, hr);
+                let highlightText2 = str.substring(hr);
 
                 // Add the footnote marker here
                 if (isComment) {
