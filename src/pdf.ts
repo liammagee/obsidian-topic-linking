@@ -10,6 +10,7 @@ import { TemplateResolver } from './templates/resolver';
 import nunjucks from 'nunjucks';
 import { encode } from 'fast-png';
 
+
 // From pdf.js src/shared/utils.js
 const ImageKind = {
     GRAYSCALE_1BPP: 1,

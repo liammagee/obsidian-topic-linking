@@ -25,8 +25,10 @@ Source: [[{{filePath}}]]
 {% for annotation in annotations %}
 > [!QUOTE] Highlight from [[#Page {{annotation.page}}]]
 > *{{annotation.highlightText|safe}}*
+{%- if annotation.commentText %}
 >
-> {% if annotation.commentText %}**Note:** ${{ annotation.commentText|safe }} {% endif %}
+>**Note:** ${{ annotation.commentText|safe }} 
+{%- endif %}
 {% endfor %}
 {%- endif %}
 
