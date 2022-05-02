@@ -17,6 +17,7 @@ const ImageKind = {
     RGB_24BPP: 2,
     RGBA_32BPP: 3
 };
+
 const DEBUG_PAGE : number = 0;
 const DEBUG_PAGE_MAX : number = 0;
 const DEBUG_ITEM_START : number = 0;
@@ -24,6 +25,8 @@ const DEBUG_ITEM_END : number = 1000;
 
 const NEWLINE_DEVIANCE = 0.9;
 const BLOCKQUOTE_DEVIANCE = 0.97;
+const BLOCKQUOTE_MIN = 1.25;
+const BLOCKQUOTE_MAX = 4;
 const SUBSCRIPT_DEVIANCE = 0.8;
 const Y_JITTER = 0.01;
 
@@ -32,6 +35,57 @@ const Y_JITTER = 0.01;
 // Work on a way to calculate this dynamically for double-spaced texts
 const LINE_HEIGHT_MIN = -0.75;
 const LINE_HEIGHT_MAX = -1.3;
+
+// https://simplernerd.com/js-console-colors/
+const Log = {
+    reset: "\x1b[0m",
+    bright: "\x1b[1m",
+    dim: "\x1b[2m",
+    underscore: "\x1b[4m",
+    blink: "\x1b[5m",
+    reverse: "\x1b[7m",
+    hidden: "\x1b[8m",
+    // Foreground (text) colors
+    fg: {
+      black: "\x1b[30m",
+      red: "\x1b[31m",
+      green: "\x1b[32m",
+      yellow: "\x1b[33m",
+      blue: "\x1b[34m",
+      magenta: "\x1b[35m",
+      cyan: "\x1b[36m",
+      white: "\x1b[37m",
+      crimson: "\x1b[38m"
+    },
+    // Background colors
+    bg: {
+      black: "\x1b[40m",
+      red: "\x1b[41m",
+      green: "\x1b[42m",
+      yellow: "\x1b[43m",
+      blue: "\x1b[44m",
+      magenta: "\x1b[45m",
+      cyan: "\x1b[46m",
+      white: "\x1b[47m",
+      crimson: "\x1b[48m"
+    }
+  };
+  const log = (obj: any, indent: string = '') => {
+    const cssKeys = ["color: #fa0; font-weight: "];
+    const keyCss = ["color: #fa0"];
+    Object.keys(obj).forEach(key => {
+        const val = obj[key];
+        if (typeof val === 'object' && val !== null) {
+            console.log(`${indent}${Log.bright}${Log.fg.red}${key}:${Log.reset}`)
+            log(val, indent + '   ');
+        }
+        else 
+            console.log(`${indent}${Log.bright}${Log.fg.red}${key}: ${Log.reset}${Log.fg.white}${obj[key]}`)
+    });
+}
+
+
+
 
 
 
@@ -161,10 +215,12 @@ class PDFPageState {
     yScale : number = 1;
     xl = 0;
     yl = 0;
+    xn = 0;
+    yn = 0;
+    xll = 0;
     xOffset = 0;
     yOffset = 0;
     xOffsetFromMargin = 0;
-    // xOffsetFromMargin = j % 2 == 1 ? stateDocument.leftMarginOddLikely : stateDocument.leftMarginEvenLikely;
     runningWidth : number = 0;
 
     italic : boolean = false;
@@ -172,24 +228,36 @@ class PDFPageState {
     subscript : boolean = false;
     superscript : boolean = false;
     newLine : boolean = false;
-    sameLineAddSpace : boolean = false;
+    blockquote : boolean = false;
+    xOffsetBlockquote: number = 0;
 
     fontSize : number = 1;
-    fontScale : number = 1;
-    fontScaleLast : number = 1;
     fontNameLast : string = null;
     fontFaceChange : boolean = false;
     transform : any = null;
-
+    fontScale : number = 1;
+    fontScaleLast : number = 1;
+    fontTransform : number = 1;
+    fontTransformLast : number = 1;
+    width: number = 0;
+    
     associatedTextContent : any = null;
 
     resetPageState() {
         this.fontScaleLast = this.fontScale;
         this.fontScale = this.fontSize * this.yScale;
+        this.fontTransformLast = this.fontTransform;
+        this.fontTransform = this.fontScale;
+        if (this.transform)
+            this.fontTransform *= this.transform[3];
+        
         this.fontFaceChange = false;
 
         this.newLine = false;
-        this.sameLineAddSpace = false;
+        this.subscript = false;
+        this.superscript = false;
+        this.blockquote = false;
+        this.xOffsetBlockquote = this.xOffsetFromMargin;
         this.runningWidth = 0;
     }
 
@@ -289,14 +357,14 @@ export class PDFContentExtractor {
     };
 
 
-    captureImage = async (vault: Vault, img: any, file: TFile, statePage: PDFPageState, j:number, i:number, imagePath: string) => {
+    captureImage = async (vault: Vault, img: any, file: TFile, statePg: PDFPageState, j:number, i:number, imagePath: string) => {
 
         try {
 
             // Convert and save image to a PNG
-            const yScale : number = statePage.transform[3];
-            const x = statePage.transform[4];
-            const y = statePage.transform[5];
+            const yScale : number = statePg.transform[3];
+            const x = statePg.transform[4];
+            const y = statePg.transform[5];
             const yAdj : number = y + yScale;
                 
             const bn = (file !== null) ? file.basename : '';
@@ -359,7 +427,7 @@ export class PDFContentExtractor {
      */
     processPDF = async (vault: Vault, settings: TopicLinkingSettings, file : TFile, fileCounter : number) => {
 
-        let stateDocument : PDFDocumentState = new PDFDocumentState();
+        let stateDoc : PDFDocumentState = new PDFDocumentState();
 
         const buffer = await vault.readBinary(file);
         let pdf = null;
@@ -370,7 +438,11 @@ export class PDFContentExtractor {
             console.log(`Error loading ${file.path}: ${e}`);
             return;
         }
-        
+
+        // Clear console - remove for production
+        if (DEBUG_PAGE > 0)
+            console.clear();
+
         console.log(`Loading file num ${fileCounter} at ${file.basename}, with: ${pdf.numPages} pages and size: ${file.stat.size / 1000}KB.`);
 
         // Create a Markdown file for output
@@ -395,16 +467,13 @@ export class PDFContentExtractor {
         let leftMarginsOdd : Record<number, number> = {},
             leftMarginsEven : Record<number, number> = {};
         let totalH = 0, counterH = 0;
-        let fontScale : number = 1;
-        let fontSize : number = 1;
         let yAccumulator = 0, yCounter = 0, yLast = 0;
         let hAccumulator = 0, hCounter = 0, hLast = 0;
         let heightFrequencies: Record<number, number> = {};
-        let heightStringLengths: Record<number, number> = {};
 
         // FIRST LOOP: extract annotations, and estimate line spacing and left margins
         for (let j = 1; j <= pdf.numPages && (DEBUG_PAGE_MAX <= 0 || j <= DEBUG_PAGE_MAX); j++) {
-            stateDocument.currentPage = j;
+            stateDoc.currentPage = j;
             const page = await pdf.getPage(j);
             const textContent = await page.getTextContent();
             const annotations = await page.getAnnotations();
@@ -415,7 +484,7 @@ export class PDFContentExtractor {
                 for (let i = 0; i < opList.fnArray.length; i++) {
                     const fnType : any = opList.fnArray[i];
                     const args : any = opList.argsArray[i];
-                    console.log(fnType, args)
+                    console.log(i, fnType, args)
                 }
             }
 
@@ -453,14 +522,14 @@ export class PDFContentExtractor {
 
                 // Do check for whether any annotation bounding boxes overlap with this item
                 // Handle annotations - highlight and comments as footnotes
-                let { stateDocument:PDFDocumentState, itemHighlights } = this.applyAnnotations(stateDocument, item, annotations);
+                let { stateDoc:PDFDocumentState, itemHighlights } = this.applyAnnotations(stateDoc, item, annotations);
 
                 // if (j == DEBUG_PAGE)
-                //     console.log(str, itemHighlights);
+                //     console.log(i, item);
 
                 // Handle any highlighting
-                stateDocument.bufferText = str;
-                stateDocument = this.highlightHandler(stateDocument, itemHighlights);
+                stateDoc.bufferText = str;
+                stateDoc = this.highlightHandler(stateDoc, itemHighlights);
             }
 
             for (let i = 0; i < opList.fnArray.length; i++) {
@@ -473,23 +542,10 @@ export class PDFContentExtractor {
                         leftMarginsEven[x] = (leftMarginsEven[x] === undefined) ? 1 : leftMarginsEven[x] + 1;
                     else 
                         leftMarginsOdd[x] = (leftMarginsOdd[x] === undefined) ? 1 : leftMarginsOdd[x] + 1;
-
-                    // Alternative way of calculating text heights / widths
-                    /*
-                    if (fontSize > 0) {
-                        let fontScale = fontSize * xScale;
-                        if (heightFrequencies[fontScale] === undefined)
-                            heightFrequencies[fontScale] = 1;
-                        else
-                            heightFrequencies[fontScale] += 1;
-                        totalH += fontScale;
-                        counterH++;
-                    }
-                    */
     
                 }
                 else if(fnType === this.pdfjs.OPS.setFont) {
-                    fontSize = parseFloat(args[1]);
+                    // statePg.fontSize = parseFloat(args[1]);
                 }
             }
 
@@ -499,146 +555,54 @@ export class PDFContentExtractor {
 
 
         // Estimate line spacing
-        stateDocument.estimateLineSpacing(yAccumulator, yCounter, hAccumulator, hCounter);
+        stateDoc.estimateLineSpacing(yAccumulator, yCounter, hAccumulator, hCounter);
         // Calculate odd and even margins, average text height
-        stateDocument.estimateMargins(leftMarginsOdd, leftMarginsEven);
+        stateDoc.estimateMargins(leftMarginsOdd, leftMarginsEven);
         // Calculate average text height
-        stateDocument.estimateTextHeight(totalH, counterH);
-        stateDocument.estimateTextModeHeight(heightFrequencies);
+        stateDoc.estimateTextHeight(totalH, counterH);
+        stateDoc.estimateTextModeHeight(heightFrequencies);
         // console.log(heightFrequencies);
-        console.log("Mean height: ",stateDocument.meanTextHeight);
-        console.log("Mode height: ",stateDocument.modeTextHeight);
+        console.log("Mean height: ",stateDoc.meanTextHeight);
+        console.log("Mode height: ",stateDoc.modeTextHeight);
 
         // Append the metadata
-        await this.createHeader(file, stateDocument, vault, newFile);
+        await this.createHeader(file, stateDoc, vault, newFile);
 
         // Reset document state
-        stateDocument.resetState();
+        stateDoc.resetState();
 
 
         // SECOND LOOP: Do content extraction
         for (let j = 1; j <= pdf.numPages && (DEBUG_PAGE_MAX <= 0 || j <= DEBUG_PAGE_MAX); j++) {
 
-
             const page = await pdf.getPage(j);
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
-            const textContent = await page.getTextContent();
             const commonObjs = page.commonObjs._objs;
 
-            stateDocument.currentPage = j;
-            let statePage : PDFPageState = new PDFPageState();
-
-            // Save images
-            let objPositions : PDFObjectPosition[] = [];
-            let runningText : string = '';
-            let positionRunningText : PDFObjectPosition = null;
-
-            // Coordinate variables
-            // Set scale to 1 by default (in case setTextMatrix is not called)
-            let xScale : number = 1;
-            let yScale : number = 1;
-            let xl = 0, yl = 0;
-            let xOffset = 0, yOffset = 0;
-            let xOffsetFromMargin = j % 2 == 1 ? stateDocument.leftMarginOddLikely : stateDocument.leftMarginEvenLikely;
-            let runningWidth : number = 0;
-
-            let newLine : boolean = false;
-
-            let fontSize : number = 1;
-            let fontScale : number = 1;
-            let fontScaleLast : number = 1;
-
-
-            const completeObject = (xn : number, yn: number, width: number, height: number) => {
-                if (runningText.trim() !== '') {
-
-                    if (['bibliography', 'references'].includes(runningText.trim().toLowerCase()))
-                        stateDocument.inBibliography = true;
-
-                    // Treat as a heading, and calculate the heading size by the height of the line
-                    // if (j == DEBUG_PAGE)
-                    //     console.log("fontScale", fontScale, fontSize, yScale);
-                    let { headingPadding, heading, headingTrail } = this.headingHandler(fontScale, stateDocument.modeTextHeight, runningText);
-                    runningText = `${headingPadding}${heading}${runningText}${headingTrail}`;
-
-                    if (stateDocument.highlightAccumulate) 
-                        runningText = `${runningText}==`;
-
-                    positionRunningText.obj = runningText;
-                    positionRunningText.width = width;
-                    positionRunningText.height = height - positionRunningText.x;
-                    objPositions.push(positionRunningText);
-                    runningText = '';
-                    
-                    if (stateDocument.highlightAccumulate) 
-                        runningText = `==${runningText}`;
-                }
-                positionRunningText = new PDFObjectPosition(runningText, xn, yn, 0, 0);
-
-                statePage.resetPageState();
-                fontScaleLast = fontScale;
-                fontScale = fontSize * yScale;
-                statePage.fontFaceChange = false;
-                
-                newLine = false;
-                runningWidth = 0;
-
-                return true;
-            };
-
-            if (positionRunningText !== null) {
-                positionRunningText.obj = runningText;
-                objPositions.push(positionRunningText);
-            }
-
-            /*
-            // Font retrieval doesn't work reliably
-            for (let i = 0; i < textContent.items.length; i++) {
-                const item = textContent.items[i];
-                let { str, dir, width, height, transform, fontName, hasEOL } = item;
-                if (j == DEBUG_PAGE) {
-                    console.log(" PROCESSING TEXT ITEMS");
-                    console.log(item);
-                }
-                let x = transform[4];
-                let y = transform[5];
-                let { headingPadding, heading, headingTrail } = this.headingHandler(fontScale, stateDocument.modeTextHeight, str);
-                let font:any = Object.values(commonObjs).filter((obj:any) => obj.data.name === fontName)[0];
-                    const fontDataName = font.data.name;
-                let italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
-                let bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
-                const leadingSpace = str.startsWith(' ') ? ' ' : '';
-                const trailingSpace = str.endsWith(' ') ? ' ' : '';
-                if (bold && str.trim().length > 0) {
-                    if (runningText.endsWith('**')) {
-                        runningText = runningText.substring(0, runningText.length - 2);
-                        str = `${str.trim()}**${trailingSpace}`;
-                    }
-                    else 
-                        str = `**${str.trim()}**${trailingSpace}`;
-                }
-                if (italic && str.trim().length > 0) {
-                    if (runningText.endsWith('*')) {
-                        runningText = runningText.substring(0, runningText.length - 1);
-                        str = `${str.trim()}*${trailingSpace}`;
-                    }
-                    else
-                        str = `*${str.trim()}*${trailingSpace}`;
-                }
-                positionRunningText = new PDFObjectPosition(str, x, y, width, height);
-                objPositions.push(positionRunningText);
-            }
-            */
+            // State variables
+            stateDoc.currentPage = j;
+            let statePg : PDFPageState = new PDFPageState();
+            // Set the margin offset based on odd / even age
+            statePg.xOffsetFromMargin = stateDoc.currentPage % 2 == 1 ? 
+                                            stateDoc.leftMarginOddLikely : 
+                                            stateDoc.leftMarginEvenLikely;
+            statePg.xOffsetBlockquote = statePg.xOffsetFromMargin;
 
             // Loop through operators
             for (let i = 0; i < opList.fnArray.length; i++) {
                 const fnType : any = opList.fnArray[i];
                 const args : any = opList.argsArray[i];
-                
-                const pseudoKey = Math.round(j * 1000000 + yl * 1000 + xl);
-                statePage.associatedTextContent = annotatedObjs[pseudoKey] !== undefined ? annotatedObjs[pseudoKey] : statePage.associatedTextContent;
-                let width = (statePage.associatedTextContent !== null) ? statePage.associatedTextContent.width : 0;
+
+                // The only way I know how to obtain the width is via a request to the associated text object.
+                // Use of the hash / pseudo-key is a hack to get an object at the same location.
+                const pseudoKey = Math.round(j * 1000000 + statePg.yl * 1000 + statePg.xl);
+                statePg.associatedTextContent = annotatedObjs[pseudoKey] !== undefined ? annotatedObjs[pseudoKey] : statePg.associatedTextContent;
+                // if (DEBUG_PAGE == j) {
+                //     log({ associatedTextContent: statePg.associatedTextContent} )
+                // }
+
+                statePg.width = (statePg.associatedTextContent !== null) ? statePg.associatedTextContent.width : 0;
                 
                 if (fnType === this.pdfjs.OPS.beginText) {
                     // Begin text
@@ -652,237 +616,272 @@ export class PDFContentExtractor {
                     // Get font properties
                     const font : any = commonObjs[args[0]];
                     const fontDataName = font.data.name;
-                    if (fontDataName !== statePage.fontNameLast && statePage.fontNameLast != null) 
-                        statePage.fontFaceChange = true;
-                    statePage.fontNameLast = fontDataName;
+                    if (fontDataName !== statePg.fontNameLast && statePg.fontNameLast != null) 
+                        statePg.fontFaceChange = true;
+                    statePg.fontNameLast = fontDataName;
 
-                    fontSize = parseFloat(args[1]);
+                    statePg.italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
+                    statePg.bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
+                    statePg.fontSize = parseFloat(args[1]);
                     // Set this to 1, in case setTextMatrix is not called
-                    if (yScale <= 0)
-                        yScale = 1;
-
-                    statePage.italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
-                    statePage.bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
-                    statePage.fontSize = parseFloat(args[1]);
-                    // Set this to 1, in case setTextMatrix is not called
-                    statePage.yScale = 1;
+                    if (statePg.yScale <= 0)
+                        statePg.yScale = 1;
                 }
                 else if (fnType === this.pdfjs.OPS.setTextMatrix) {
-                    xScale = args[0];
-                    const x : number = args[4];
-                    let xn :number = x;
-                    let xChange : number = xn - (xl + width);
 
-                    yScale = args[3];
+                    statePg.xScale = args[0];
+                    statePg.yScale = args[3];
+
+                    let xn :number = args[4];
+
                     const y : number = args[5];
-                    let ySign = Math.sign(yScale);
+                    let ySign = Math.sign(statePg.yScale);
                     let yn :number = y * ySign;
-
-                    newLine = false;
-                    statePage.superscript = false;
-                    statePage.subscript = false;
                     
                     // INSERTED
-                    fontScale = fontSize * yScale;
+                    let yTransform = statePg.transform ? statePg.transform[3] : 1;
+                    statePg.fontScale = statePg.fontSize * statePg.yScale;
+                    statePg.fontTransform = statePg.fontScale * yTransform;
+                    statePg.superscript = false;
 
-                    let fontScaleNew = fontSize * yScale;
-                    let fontScaleMax = fontScale;
-                    if (Math.abs(fontScaleMax) < Math.abs(fontScaleLast))
-                        fontScaleMax = fontScaleLast;
-                    if (Math.abs(fontScaleMax) < Math.abs(fontScaleNew))
-                        fontScaleMax = fontScaleNew;
-                    let yChange : number = (yn - yl) / (fontScaleMax * ySign);
+                    let fontScaleMax = statePg.fontScale;
+                    if (Math.abs(fontScaleMax) < Math.abs(statePg.fontScaleLast))
+                        fontScaleMax = statePg.fontScaleLast;
+                    if (Math.abs(fontScaleMax) < Math.abs(statePg.fontScale))
+                        fontScaleMax = statePg.fontScale;
 
-                    const withinLineBounds = statePage.bounds(yChange, stateDocument.lineSpacingEstimateMax, stateDocument.lineSpacingEstimateMin);
+                    // Represent change in coordinates in relative line terms
+                    let yChange : number = (yn - statePg.yl) / (fontScaleMax * ySign);
 
-                    // Captures the case where the y coordinate change is not significant enough to mean a nwe line change
-                    if (positionRunningText != null && 
-                        x <= xOffsetFromMargin && 
+                    const withinLineBounds = statePg.bounds(yChange, 
+                                                                stateDoc.lineSpacingEstimateMax, 
+                                                                stateDoc.lineSpacingEstimateMin);
+
+                    // Captures the case where the y coordinate change is not significant enough to mean a new line change
+                    if (statePg.positionRunningText != null && 
+                        ((!statePg.blockquote && Math.abs(xn) <= statePg.xOffsetFromMargin + 0.01) || 
+                         (statePg.blockquote && Math.abs(xn) >= statePg.xOffsetBlockquote - 0.01)) && 
                         withinLineBounds && 
-                        Math.abs(fontScaleNew) > fontScale * NEWLINE_DEVIANCE)  {
-                               // Do nothing
-                        newLine = withinLineBounds;// && xChange <= 0;
-                        if (!newLine && fontScaleNew < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE) {
-                            statePage.superscript = yChange > Y_JITTER && 
-                                            yChange < -stateDocument.lineSpacingEstimateMin;
-                        }
-                    }
-                    else if (positionRunningText != null && 
-                        (x > xl && Math.abs(yChange) < .51)) {
-                        // (x > xl && Math.abs(yChange) < 0.5 && Math.abs(fontScaleLast) >= Math.abs(fontScale))) {
+                        Math.abs(statePg.fontTransform) > NEWLINE_DEVIANCE)  {
+
                         // Do nothing
-                        newLine = withinLineBounds;// && xChange <= 0;
-                        if (!newLine && fontScaleNew < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE) {
-                            statePage.superscript = yChange > Y_JITTER && 
-                                            yChange < -stateDocument.lineSpacingEstimateMin;
+                        statePg.newLine = withinLineBounds;
+                        if (!statePg.newLine && statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE) {
+                            statePg.superscript = yChange > Y_JITTER && 
+                                            yChange < -stateDoc.lineSpacingEstimateMin;
                         }
+
+                    }
+                    else if (statePg.positionRunningText != null && 
+                        (xn > statePg.xl && Math.abs(yChange) < .51)) {
+                        // (x > statePg.xl && Math.abs(yChange) < 0.5 && Math.abs(fontScaleLast) >= Math.abs(fontScale))) {
+                        
+                        // Do nothing
+                        statePg.newLine = withinLineBounds;// && xChange <= 0;
+                        if (!statePg.newLine && statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE) {
+                            statePg.superscript = yChange > Y_JITTER && 
+                                            yChange < -stateDoc.lineSpacingEstimateMin;
+                        }
+
                     }
                     else {
-                        completeObject(xn, yn, width, yl);
 
-                        let xmax : number = Math.round(xn - Math.abs(fontScale) * 2);
-                        let xmin : number = Math.round(xn - Math.abs(fontScale) * 4);
-                        if (fontScale < stateDocument.modeTextHeight * BLOCKQUOTE_DEVIANCE && 
+                        this.completeObject(stateDoc, statePg, xn, yn, statePg.width, statePg.yl);
+
+                        let xmax : number = Math.round(xn - Math.abs(statePg.fontTransform) * BLOCKQUOTE_MIN);
+                        let xmin : number = Math.round(xn - Math.abs(statePg.fontTransform) * BLOCKQUOTE_MAX);
+                        if (statePg.fontTransform < stateDoc.modeTextHeight * BLOCKQUOTE_DEVIANCE && 
                             j % 2 === 0 && 
-                            statePage.bounds(stateDocument.leftMarginEvenLikely, xmin, xmax)) {
-                            runningText = `> ${runningText}`;
+                            statePg.bounds(stateDoc.leftMarginEvenLikely, xmin, xmax)) {
+
+                            statePg.runningText = `> ${statePg.runningText}`;
+                            statePg.blockquote = true;
+                            statePg.xOffsetBlockquote = xn;
+
                         }
-                        else if (fontScale < stateDocument.modeTextHeight * BLOCKQUOTE_DEVIANCE && 
+                        else if (statePg.fontTransform < stateDoc.modeTextHeight * BLOCKQUOTE_DEVIANCE && 
                             j % 2 === 1 && 
-                            statePage.bounds(stateDocument.leftMarginOddLikely, xmin, xmax)) {
-                            runningText = `> ${runningText}`;
+                            statePg.bounds(stateDoc.leftMarginOddLikely, xmin, xmax)) {
+
+                            statePg.runningText = `> ${statePg.runningText}`;
+                            statePg.blockquote = true;
+                            statePg.xOffsetBlockquote = xn;
+
                         }
 
-                        statePage.superscript = //Math.abs(fontScaleLast) > Math.abs(fontScale) && 
-                                    Math.abs(fontScale) < stateDocument.modeTextHeight * SUBSCRIPT_DEVIANCE ;
+                        statePg.superscript = //Math.abs(fontScaleLast) > Math.abs(fontScale) && 
+                                    Math.abs(statePg.fontTransform) < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
                                     // && yChange > 0.01;
-                                    //  && yChange < -stateDocument.lineSpacingEstimateMin;
+                                    //  && yChange < -stateDoc.lineSpacingEstimateMin;
+
+
                     }
-                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                    //     console.log(`setTextMatrix ${i}`, x, xl, args )
-                    xOffsetFromMargin = xn;
-                    xl = xn;
-                    yl = yn;
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                        console.log( {i,
+                            
+                            withinLineBounds, 
+                            blockquote: statePg.blockquote, 
+                            xOffsetBlockquote: statePg.xOffsetBlockquote,
+                            fontScale: statePg.fontScale, 
+                            fontTransform: statePg.fontTransform, 
+                            modeTextHeight: stateDoc.modeTextHeight, 
+                            superscript: statePg.superscript, 
+                            test: statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE,
+                            leftMarginOddLikely: stateDoc.leftMarginOddLikely, 
+                            fontSize: statePg.fontSize, 
+                            yTransform, 
+                            yChange, 
+                            yn, 
+                            yl: statePg.yl, 
+                            xn, 
+                            xl: statePg.xl, 
+                            xOffsetFromMargin: statePg.xOffsetFromMargin, 
+                            args} );
+                    statePg.xll = statePg.xl;
+                    statePg.xl = xn;
+                    statePg.yl = yn;
                 }
-                else if (fnType === this.pdfjs.OPS.setLeadingMoveText || fnType === this.pdfjs.OPS.moveText) {
+                else if (fnType === this.pdfjs.OPS.setLeadingMoveText || 
+                        fnType === this.pdfjs.OPS.moveText) {
                     let x : number = args[0];
                     let y : number = args[1];
-                    xOffset = x * xScale;
-                    yOffset = y * yScale;
-                    let xn :number = xl + xOffset;
-                    let yn :number = yl + yOffset;
-                    let yChange : number = (yn - yl ) / yScale;
-                    newLine = false;
+                    statePg.xOffset = x * statePg.xScale;
+                    statePg.yOffset = y * statePg.yScale;
+                    let xn :number = statePg.xl + statePg.xOffset;
+                    let yn :number = statePg.yl + statePg.yOffset;
+                    let yChange : number = (yn - statePg.yl ) / statePg.yScale;
+                    statePg.newLine = false;
 
-                    let withinLineBounds = statePage.bounds(yChange, 
-                                stateDocument.lineSpacingEstimateMax, 
-                                stateDocument.lineSpacingEstimateMin);
+                    let withinLineBounds = statePg.bounds(yChange, 
+                                                            stateDoc.lineSpacingEstimateMax, 
+                                                            stateDoc.lineSpacingEstimateMin);
                     // Review these conditions:
                     // 1. Next line, normal text
                     // 2. Next line, inside bibliography
                     // 3. Same line
-                    if (!stateDocument.inBibliography && 
+                    if (!stateDoc.inBibliography && 
                         ((withinLineBounds && x <= 0) || 
                             (Math.abs(yChange) < 0.1))) {
-                        newLine = withinLineBounds;
+
+                        statePg.newLine = withinLineBounds;
+
                     }
-                    else if (stateDocument.inBibliography && 
+                    else if (stateDoc.inBibliography && 
                         ((j % 2 == 0 && withinLineBounds && 
-                            xn > stateDocument.leftMarginEvenLikely + xScale) || 
+                            xn > stateDoc.leftMarginEvenLikely + statePg.xScale) || 
                          (j % 2 == 1 && withinLineBounds && 
-                            xn > stateDocument.leftMarginOddLikely + xScale) || 
+                            xn > stateDoc.leftMarginOddLikely + statePg.xScale) || 
                             (Math.abs(y) < 0.1))) {
 
-                        newLine = (j % 2 == 0 && withinLineBounds && 
-                                xn > stateDocument.leftMarginEvenLikely + xScale) || 
-                            (j % 2 == 1 && withinLineBounds && 
-                                xn > stateDocument.leftMarginOddLikely + xScale);
-
+                        statePg.newLine = (j % 2 == 0 && withinLineBounds && 
+                                            xn > stateDoc.leftMarginEvenLikely + statePg.xScale) || 
+                                        (j % 2 == 1 && withinLineBounds && 
+                                            xn > stateDoc.leftMarginOddLikely + statePg.xScale);
                     }
                     else {
-                        completeObject(xn, yn, width, yl);
+
+                        this.completeObject(stateDoc, statePg, xn, yn, statePg.width, statePg.yl);
+
                     }
 
-                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                    //     console.log(`setLeadingMoveText ${i}`, yChange, fontScale, x, y, xl, yl, xn, yn);
-                    if (Math.abs(yl - yn) > 1.0) 
-                        xOffsetFromMargin = xn;
-                    xl = xn;
-                    yl = yn;
-
-                    // if (x > 0)
-                    //     sameLineAddSpace = true;
+                    // if (Math.abs(statePg.yl - yn) > 1.0) 
+                    //     statePg.xOffsetFromMargin = xn;
+                    statePg.xll = statePg.xl;
+                    statePg.xl = xn;
+                    statePg.yl = yn;
 
                 }
                 else if (fnType === this.pdfjs.OPS.nextLine) {
-                    yl += yOffset;
+                    statePg.yl += statePg.yOffset;
                 }
                 else if (fnType === this.pdfjs.OPS.showText) {
+                    
                     const chars : any[] = args[0];
                     let bufferText : string = '';
+                    let localWidth : number = 0;
                     for (let k = 0; k < chars.length; k++) {
-                        if (chars[k].unicode !== undefined) 
-                            bufferText += chars[k].unicode;
+                        const c = chars[k];
+                        if (c.unicode !== undefined) {
+                            bufferText += c.unicode;
+                            localWidth += c.width;
+                        }
                         else {
-                            const code = parseFloat(chars[k]);
-                            if (code < -100)
+                            const code = parseFloat(c);
+                            if (code < -100) {
+                                localWidth += Math.abs(code);
                                 bufferText += ' ';
+                            }
                         }
                     }
 
                     // Apply annotations
-                    let height = fontScale;
-                    let transform = [1, 0, 0, 1, xl, yl];
-                    let item : any = { width: width, height: height, transform: transform, text: bufferText };
-                    let { stateDocument:PDFDocumentState, itemHighlights } : any = this.applyAnnotations(stateDocument, item, annotations);
+                    let transform = [1, 0, 0, 1, statePg.xl,  statePg.yl];
+                    let item : any = { width: statePg.width, height: statePg.fontScale, transform: transform, text: bufferText };
+                    let { stateDoc:PDFDocumentState, itemHighlights } : any = this.applyAnnotations(stateDoc, item, annotations);
 
                     // Rules for new lines
-                    if (runningText.length == 0 && bufferText.trim().length == 0) 
+                    if (statePg.runningText.length == 0 && bufferText.trim().length == 0) 
                         bufferText = '';
 
                     bufferText = bufferText.replace(/\s+/g, ' ');
     
-                    if (newLine && 
-                        runningText.length > 0 && 
-                        !runningText.endsWith(' ') && 
-                        !runningText.endsWith('\n') && 
+                    if (statePg.newLine && 
+                        statePg.runningText.length > 0 && 
+                        !statePg.runningText.endsWith(' ') && 
+                        !statePg.runningText.endsWith('\n') && 
                         bufferText.trim().length > 0) 
-                        runningText += ' ';
+                        statePg.runningText += ' ';
                        
-                    if (!newLine && 
-                        (xl > runningWidth || xl < xOffsetFromMargin) && 
-                        runningText.trim().length > 0 && 
-                        !runningText.endsWith(' ') && 
-                        !runningText.endsWith('==')) 
-                        runningText += ' '; 
+                    if (!statePg.newLine && 
+                        (statePg.xl > statePg.runningWidth || statePg.xl < statePg.xll) && 
+                        statePg.runningText.trim().length > 0 && 
+                        !statePg.runningText.endsWith(' ') && 
+                        !statePg.runningText.endsWith('==')) 
+                        statePg.runningText += ' '; 
                     
-                    if (statePage.fontFaceChange) {
-                        runningText += ' '; 
-                        statePage.fontFaceChange = false;
+                    if (statePg.fontFaceChange) {
+                        // statePg.runningText += ' '; 
+                        statePg.fontFaceChange = false;
                     }
 
-                    if (newLine && bufferText.trim().length == 0) {
-                        runningText += '\n\n';
+                    if (statePg.newLine && bufferText.trim().length == 0) {
+                        statePg.runningText += '\n\n';
                         bufferText = '';
                     }
 
                     // Complicated logic for handling hyphens at end-of-line. Looks to work,
                     // but could break in some circumstances
-                    if (newLine && runningText.endsWith('-')) 
-                        runningText = runningText.substring(0, runningText.length - 1);
-                    else if (newLine && runningText.endsWith('- ')) 
-                        runningText = runningText.substring(0, runningText.length - 2);
+                    if (statePg.newLine && statePg.runningText.endsWith('-')) 
+                        statePg.runningText = statePg.runningText.substring(0, statePg.runningText.length - 1);
+                    else if (statePg.newLine && statePg.runningText.endsWith('- ')) 
+                        statePg.runningText = statePg.runningText.substring(0, statePg.runningText.length - 2);
                     else if (bufferText.endsWith('- '))
                         bufferText = bufferText.substring(0, bufferText.length - 1);
-                    // if (j == DEBUG_PAGE)  
-                    //     console.log('showText', newLine, j, i, bufferText);
-                    // if (j == DEBUG_PAGE && (i >= 375 && i <= 390))
-                    //     console.log(`showText ${i}`, `%${bufferText}%`); //, `@${statePage.associatedTextContent.str}@`
+                    
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))  
+                        console.log({command: 'showText', i, xll: statePg.xll, xl: statePg.xl, test: (localWidth / (statePg.fontTransform * 100)), runningWidth: statePg.runningWidth, localWidth, bufferText});
 
-                    // if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                    //     console.log(`showText ${i}`, xl, `%${bufferText}%`, `%${runningText.substring(0, 50)}%`); //, `@${statePage.associatedTextContent.str}@`
+                    // Set new running width
+                    statePg.runningWidth = statePg.xl + (statePg.fontScale * localWidth / 1000);
 
-                    let tmpWidth = bufferText.length * fontSize * xScale;
-                    runningWidth = xl + tmpWidth * 1.5;
-
-                    if (statePage.subscript)
+                    if (statePg.subscript)
                         bufferText = `<sub>${bufferText}</sub> `;
-                    else if (statePage.superscript)
+                    else if (statePg.superscript)
                         bufferText = `<sup>${bufferText}</sup> `;
 
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
-                    if (statePage.bold && bufferText.trim().length > 0) {
-                        if (runningText.endsWith('**')) {
-                            runningText = runningText.substring(0, runningText.length - 2);
+                    if (statePg.bold && bufferText.trim().length > 0) {
+                        if (statePg.runningText.endsWith('**')) {
+                            statePg.runningText = statePg.runningText.substring(0, statePg.runningText.length - 2);
                             bufferText = `${bufferText.trim()}**${trailingSpace}`;
                         }
                         else 
                             bufferText = `**${bufferText.trim()}**${trailingSpace}`;
                     }
-                    if (statePage.italic && bufferText.trim().length > 0) {
-                        if (runningText.endsWith('*')) {
-                            runningText = runningText.substring(0, runningText.length - 1);
+                    if (statePg.italic && bufferText.trim().length > 0) {
+                        if (statePg.runningText.endsWith('*')) {
+                            statePg.runningText = statePg.runningText.substring(0, statePg.runningText.length - 1);
                             bufferText = `${bufferText.trim()}*${trailingSpace}`;
                         }
                         else
@@ -890,24 +889,26 @@ export class PDFContentExtractor {
                     }
 
                     // Handle any highlighting
-                    stateDocument.bufferText = bufferText;
-                    stateDocument = this.highlightHandler(stateDocument, itemHighlights);
-                    let str = stateDocument.bufferText;
+                    stateDoc.bufferText = bufferText;
+                    stateDoc = this.highlightHandler(stateDoc, itemHighlights);
+                    let str = stateDoc.bufferText;
                     
                     // Can cause problems. Remove when safe to do so.
                     // if (str.trim().length == 0) 
                     //     str = '';
 
-                    runningText += str;
+                    statePg.runningText += str;
 
                     if ('BIBLIOGRAPHY' === bufferText.trim()) {
-                        stateDocument.inBibliography = true;
+                        stateDoc.inBibliography = true;
                     }
                 }
-                else if (fnType === this.pdfjs.OPS.transform && settings.pdfExtractIncludeImages) {
-                    statePage.transform = args;
-                    const yScale : number = args[3];
-                    fontScale *= yScale;
+                else if (fnType === this.pdfjs.OPS.transform) {
+                    statePg.transform = args;
+                    statePg.fontScale *= args[3];
+                }
+                else if (fnType === this.pdfjs.OPS.restore) {
+                    statePg.transform = null;
                 }
                 // Image handling
                 else if (fnType === this.pdfjs.OPS.paintImageXObject && settings.pdfExtractIncludeImages) {
@@ -915,9 +916,9 @@ export class PDFContentExtractor {
                     try {
                         let img = page.objs.get(args[0]);
                         if (img != null) {
-                            let imageResult = await this.captureImage(vault, img, file, statePage, j, i, imagePath);
+                            let imageResult = await this.captureImage(vault, img, file, statePg, j, i, imagePath);
                             if (imageResult != null) 
-                                objPositions.push(imageResult);
+                                statePg.objPositions.push(imageResult);
                         }
     
                     }
@@ -930,9 +931,11 @@ export class PDFContentExtractor {
             // Release page resources.
             page.cleanup();
 
-            if (runningText.trim() !== '') {
-                positionRunningText.obj = runningText;
-                objPositions.push(positionRunningText);
+            if (statePg.runningText.trim() !== '') {
+                statePg.positionRunningText.obj = statePg.runningText;
+                statePg.positionRunningText.width = statePg.width;
+                statePg.positionRunningText.height = statePg.yl - statePg.positionRunningText.y;
+                statePg.objPositions.push(statePg.positionRunningText);
             }
 
 
@@ -950,7 +953,7 @@ export class PDFContentExtractor {
             y-ordering would produce: a, b, c, d
             (x+width)-then-y ordering would produce: a, b, d, c
             */
-            objPositions = objPositions.sort((a, b) => {
+            statePg.objPositions = statePg.objPositions.sort((a, b) => {
                 let comp = 0;
                 let yDiff = b.y - a.y;
                 let xDiff = a.x - b.x;
@@ -959,11 +962,14 @@ export class PDFContentExtractor {
                 let aComp = a.x - bxExtent;
                 let bComp = b.x - axExtent;
                 comp = aComp > 0 ? aComp : (bComp > 0 ? bComp : (yDiff === 0 ? xDiff : yDiff)); 
+                // if (DEBUG_PAGE == j)
+                //     console.log({aComp, bComp, yDiff, comp});
+                // return yDiff;
                 return comp;
             });
 
 
-            let mdStrings = objPositions.map((pos) => { return pos.format(); });
+            let mdStrings = statePg.objPositions.map((pos) => { return pos.format(); });
 
             let mdString : string = mdStrings.join('\n\n');
             // Various fixes
@@ -980,21 +986,30 @@ export class PDFContentExtractor {
 
             if (j == DEBUG_PAGE)  {
                 // console.log("textContent", textContent);
-                console.log('objPositions', objPositions);
+                console.log('objPositions', statePg.objPositions);
+                // objPositions.forEach((obj) => {
+                //     let o = {str: obj.obj, x: obj.x, w: obj.width, e: obj.x + obj.width,  y: obj.y}
+                //     console.log(`\n`);
+                //     log(o);
+                // })
             }
 
             const pageOutput = this.templatePage.render({ pageNo: j, markdownOutput: mdString });
             await vault.append(newFile, pageOutput);
 
+            if (DEBUG_PAGE == j) {
+                console.log(page.view)
+                console.log(stateDoc.leftMarginEvenLikely)
+            }
         }
 
         // Add any footnotes 
-        let footnoteContents : string = this.templateFooter.render( { footnotes: stateDocument.footnotes } );
+        let footnoteContents : string = this.templateFooter.render( { footnotes: stateDoc.footnotes } );
         await vault.append(newFile, footnoteContents);
     };
 
 
-    private async createHeader(file: TFile, stateDocument: PDFDocumentState, vault: Vault, newFile: TFile) {
+    private async createHeader(file: TFile, stateDoc: PDFDocumentState, vault: Vault, newFile: TFile) {
         let metadataContents = ``;
         let itemMeta: any = {};
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
@@ -1005,8 +1020,8 @@ export class PDFContentExtractor {
         metadataContents += this.templateHeader.render({ 
                                 filePath: file.path, 
                                 item: itemMeta, 
-                                annotations: stateDocument.annotationData, 
-                                footnotes: stateDocument.footnotes 
+                                annotations: stateDoc.annotationData, 
+                                footnotes: stateDoc.footnotes 
                             });
         // Append metadata, both any bibtex content and annotations
         await vault.append(newFile, metadataContents);
@@ -1048,7 +1063,7 @@ export class PDFContentExtractor {
      * @param pageCounter 
      * @returns 
      */
-     applyAnnotations = (stateDocument: PDFDocumentState, item: any, annotations: Array<any>) => {
+     applyAnnotations = (stateDoc: PDFDocumentState, item: any, annotations: Array<any>) => {
 
         const { dir, width, height, transform, fontName, hasEOL } = item;
 
@@ -1100,7 +1115,7 @@ export class PDFContentExtractor {
                                 isComment = true;
 
                                 if (includePageNumbersInFootnotes && commentText === '') {
-                                    commentRef = `#Page ${stateDocument.currentPage}`;
+                                    commentRef = `#Page ${stateDoc.currentPage}`;
                                 }
 
                                 commentText += annotation.contentsObj.str;
@@ -1134,13 +1149,13 @@ export class PDFContentExtractor {
             commentRef: commentRef, 
             commentText: commentText };
 
-        stateDocument.itemHighlights = itemHighlights;
+        stateDoc.itemHighlights = itemHighlights;
         if (itemHighlights.highlightStart) {
-            stateDocument.highlightAccumulate = true;
-            stateDocument.highlightAccumulator = '';
+            stateDoc.highlightAccumulate = true;
+            stateDoc.highlightAccumulator = '';
         }
 
-        return { stateDocument, itemHighlights };
+        return { stateDoc, itemHighlights };
     }
     
 
@@ -1158,7 +1173,7 @@ export class PDFContentExtractor {
      * @param commentText 
      * @returns 
      */
-    processHighlights(stateDocument: PDFDocumentState, itemHighlights: any) {
+    processHighlights(stateDoc: PDFDocumentState, itemHighlights: any) {
         let {highlightStart, 
             highlightEnd, 
             highlightL, 
@@ -1167,7 +1182,7 @@ export class PDFContentExtractor {
             commentRef, 
             commentText} = itemHighlights;
         let highlightedText : string = '';
-        let str = stateDocument.bufferText;
+        let str = stateDoc.bufferText;
         if (highlightStart) {
             let sl = str.length;
             if (sl > 0) {
@@ -1197,35 +1212,67 @@ export class PDFContentExtractor {
 
                 // Add the footnote marker here
                 if (isComment) {
-                    highlightText1 += `[^${stateDocument.footnoteCounter}]`;
-                    stateDocument.footnotes[stateDocument.footnoteCounter] = `[[${commentRef}]]: ${commentText}` ;
-                    stateDocument.footnoteCounter++;
+                    highlightText1 += `[^${stateDoc.footnoteCounter}]`;
+                    stateDoc.footnotes[stateDoc.footnoteCounter] = `[[${commentRef}]]: ${commentText}` ;
+                    stateDoc.footnoteCounter++;
                 }
 
                 str = highlightText1 + `==${highlightText2}`;
                 highlightedText += highlightText1;
             }
         }
-        stateDocument.bufferText = str;
-        return { stateDocument, highlightedText };
+        stateDoc.bufferText = str;
+        return { stateDoc, highlightedText };
     }
 
 
-    private highlightHandler(stateDocument: PDFDocumentState, 
+    private highlightHandler(stateDoc: PDFDocumentState, 
                                 itemHighlights : any) {
         let highlightedText = '';
-        ({ stateDocument, highlightedText } = this.processHighlights(stateDocument, itemHighlights));
-        if (stateDocument.highlightAccumulate) {
+        ({ stateDoc, highlightedText } = this.processHighlights(stateDoc, itemHighlights));
+        if (stateDoc.highlightAccumulate) {
             if (highlightedText.length > 0)
-                stateDocument.highlightAccumulator += highlightedText + ' ';
+                stateDoc.highlightAccumulator += highlightedText + ' ';
             else
-                stateDocument.highlightAccumulator += stateDocument.bufferText + ' ';
+                stateDoc.highlightAccumulator += stateDoc.bufferText + ' ';
         }
         if (itemHighlights.highlightEnd) {
-            stateDocument.addAnnotation(itemHighlights.commentText );
+            stateDoc.addAnnotation(itemHighlights.commentText );
         }
-        return stateDocument;
+        return stateDoc;
     }
+
+
+    private completeObject = (stateDoc: PDFDocumentState, statePg: PDFPageState,  xn : number, yn: number, width: number, lastY: number) => {
+        if (statePg.runningText.trim() !== '') {
+
+            if (['bibliography', 'references'].includes(statePg.runningText.trim().toLowerCase()))
+                stateDoc.inBibliography = true;
+
+            // Treat as a heading, and calculate the heading size by the height of the line
+            let { headingPadding, heading, headingTrail } = this.headingHandler(statePg.fontScaleLast, 
+                                                                                stateDoc.modeTextHeight, 
+                                                                                statePg.runningText);
+            statePg.runningText = `${headingPadding}${heading}${statePg.runningText}${headingTrail}`;
+
+            if (stateDoc.highlightAccumulate) 
+                statePg.runningText = `${statePg.runningText}==`;
+
+            statePg.positionRunningText.obj = statePg.runningText;
+            statePg.positionRunningText.width = width;
+            statePg.positionRunningText.height = statePg.yl - statePg.positionRunningText.y;
+            statePg.objPositions.push(statePg.positionRunningText);
+
+            statePg.runningText = '';
+            if (stateDoc.highlightAccumulate) 
+                statePg.runningText = `==${statePg.runningText}`;
+        }
+
+        statePg.positionRunningText = new PDFObjectPosition(statePg.runningText, xn, yn, 0, 0);
+        statePg.resetPageState();
+
+    };
+
 
 
 
