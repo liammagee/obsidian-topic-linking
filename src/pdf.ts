@@ -11,7 +11,7 @@ import nunjucks from 'nunjucks';
 import { encode } from 'fast-png';
 
 
-// From pdf.js src/shared/utils.js
+// From pdf.js src/shared/utils.js  
 const ImageKind = {
     GRAYSCALE_1BPP: 1,
     RGB_24BPP: 2,
@@ -71,6 +71,8 @@ const Log = {
       crimson: "\x1b[48m"
     }
   };
+
+  
   const log = (page: number, item: number, obj: any, indent: string = '') => {
     if (page == DEBUG_PAGE && (item >= DEBUG_ITEM_START && item <= DEBUG_ITEM_END)) {
         const cssKeys = ["color: #fa0; font-weight: "];
@@ -932,6 +934,7 @@ export class PDFContentExtractor {
                             }
                         }
                     }
+
 
                     // Apply annotations
                     let transform = [1, 0, 0, 1, statePg.xl,  statePg.yl];
