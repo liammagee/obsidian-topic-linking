@@ -21,4 +21,7 @@ export const COORD_TOLERANCE = .51;
 export const LINE_HEIGHT_MIN = -0.75;
 export const LINE_HEIGHT_MAX = -1.5;
 
-
+// Constants for detecting second column objects in multi column layout
+export const COLUMN_WIDTH_THRESHOLD = 0.4;
+export const PAGE_HEADER_THRESHOLD = 0.05;
+export const PAGE_FOOTER_THRESHOLD = 0.95;

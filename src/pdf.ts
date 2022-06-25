@@ -17,6 +17,9 @@ import {
     SUBSCRIPT_DEVIANCE, 
     JITTER, 
     COORD_TOLERANCE, 
+    COLUMN_WIDTH_THRESHOLD,
+    PAGE_HEADER_THRESHOLD,
+    PAGE_FOOTER_THRESHOLD,
     LINE_HEIGHT_MIN, 
     LINE_HEIGHT_MAX 
 }  from './pdf-params';
@@ -215,7 +218,7 @@ export class PDFContentExtractor {
                 for (let i = 0; i < opList.fnArray.length; i++) {
                     const fnType : any = opList.fnArray[i];
                     const args : any = opList.argsArray[i];
-                    // if (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END)
+                    if (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END)
                         console.log(i, fnType, args)
                 }
             }
@@ -245,12 +248,7 @@ export class PDFContentExtractor {
                 if (height > 0)
                     hLast = height;
 
-                if (j == 10)
-                    console.log(height, str)
-                if (heightFrequencies[height] === undefined) 
-                    heightFrequencies[height] = str.trim().length;
-                else
-                    heightFrequencies[height] += str.trim().length;
+                heightFrequencies[height] = (heightFrequencies[height] || 0) + str.trim().length;
                 totalH += height;
                 counterH++;
 
@@ -258,8 +256,6 @@ export class PDFContentExtractor {
                 // Handle annotations - highlight and comments as footnotes
                 let { stateDoc:PDFDocumentState, itemHighlights } = this.applyAnnotations(stateDoc, item, annotations);
 
-                // if (j == DEBUG_PAGE)
-                //     console.log(i, item);
                 leftMarginsPage[x] = (leftMarginsPage[x] === undefined) ? 1 : leftMarginsPage[x] + 1;
                 if (j % 2 === 0) 
                     leftMarginsEven[x] = (leftMarginsEven[x] === undefined) ? 1 : leftMarginsEven[x] + 1;
@@ -350,7 +346,12 @@ export class PDFContentExtractor {
                     }
                 }
                 else if (fnType === this.pdfjs.OPS.transform) {
+                    let x = args[4];
+                    let y = args[5];
                     if (statePg.transform != undefined) {
+                        x = statePg.transform[0] * x + statePg.transform[1] * y;
+                        y = statePg.transform[2] * x + statePg.transform[3] * y;
+
                         // Multiply existing transform values
                         statePg.transform[0] *= args[0];
                         statePg.transform[1] *= args[1];
@@ -362,20 +363,17 @@ export class PDFContentExtractor {
                     }
                     // statePg.transform = args;
                     statePg.transforms[statePg.transforms.length - 1] = statePg.transform;
+
                     const xScale = statePg.transform[0];
                     const yScale = statePg.transform[3];
-                    const x = statePg.transform[4];
-                    const y = statePg.transform[5];
-                    let xn = statePg.transform[0] * x + statePg.transform[1] * y;
-                    let yn = statePg.transform[2] * x + statePg.transform[3] * y;
                     statePg.xScale *= xScale;
                     statePg.yScale *= yScale;
-                    statePg.xOrigin += xn;
-                    statePg.yOrigin += yn;
+                    statePg.xOrigin += x;
+                    statePg.yOrigin += y;
                     statePg.xRunning = statePg.xOrigin;
                     statePg.yRunning = statePg.yOrigin;
 
-                    log(j, i, { fn: 'Transform', width: statePg.width, fontScale: statePg.fontScale, fnType, x, y, xn, yn, xl: statePg.xl, yl: statePg.yl  });
+                    log(j, i, { fn: 'Transform', width: statePg.width, fontScale: statePg.fontScale, fnType, x, y, xOrigin: statePg.xOrigin, yOrigin: statePg.yOrigin, xl: statePg.xl, yl: statePg.yl  });
                 }
                 else if (fnType === this.pdfjs.OPS.save) {
                     statePg.transforms.push(null);
@@ -422,8 +420,7 @@ export class PDFContentExtractor {
 
                     statePg.xScale = args[0];
                     statePg.yScale = args[3];
-                    // let ySign = Math.sign(statePg.yScale);
-                    
+
                     // Get transform variables
                     let x0 = 1, y0 = 0;
                     let x1 = 0, y1 = 1;
@@ -441,9 +438,8 @@ export class PDFContentExtractor {
                     let yt = x1 * x + y1 * y;
                     statePg.xOffset = xt;
                     statePg.yOffset = yt;
-                    let ySign = Math.sign(statePg.yOffset);
                     let xn : number = statePg.xOrigin + statePg.xOffset;
-                    let yn : number = statePg.yOrigin + statePg.yOffset * ySign;
+                    let yn : number = statePg.yOrigin + statePg.yOffset;
 
                     statePg.fontScale = statePg.fontSize * statePg.yScale;
                     statePg.fontTransform = statePg.fontScale * y1;
@@ -455,11 +451,8 @@ export class PDFContentExtractor {
                     if (Math.abs(fontTransformMax) < Math.abs(statePg.fontTransform))
                         fontTransformMax = statePg.fontTransform;
 
-                    if (j == 10)
-                        console.log(statePg.fontTransform, y1, statePg.fontScale, statePg.fontSize)
-
                     // Represent change in coordinates in relative line terms
-                    let yChange : number = (yn - statePg.yl) / (fontTransformMax * ySign);
+                    let yChange : number = (yn - statePg.yl) / (fontTransformMax);
 
                     const withinLineBounds = statePg.bounds(yChange, 
                                                                 stateDoc.lineSpacingEstimateMax, 
@@ -521,20 +514,17 @@ export class PDFContentExtractor {
 
                         }
 
-                        statePg.superscript = //Math.abs(fontScaleLast) > Math.abs(fontScale) && 
-                                    Math.abs(statePg.fontTransform) < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
-                                    // && yChange > JITTER;
-                                    //  && yChange < -stateDoc.lineSpacingEstimateMin;
+                        statePg.superscript = Math.abs(statePg.fontTransform) < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
 
                     }
 
                     statePg.superscript = statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log( {i, pos: statePg.positionRunningText, newBlock, xl: statePg.xl, fontTransformMax, ySign, yChange, modeTextHeight: stateDoc.modeTextHeight, fontTransform: statePg.fontTransform, args, xn, yn, xOffsetFromMargin: statePg.xOffsetFromMargin, withinLineBounds } );
+                        console.log( {i, pos: statePg.positionRunningText, newBlock, xl: statePg.xl, fontTransformMax, yChange, modeTextHeight: stateDoc.modeTextHeight, fontTransform: statePg.fontTransform, args, xn, yn, xOffsetFromMargin: statePg.xOffsetFromMargin, withinLineBounds } );
                     statePg.xll = statePg.xl;
                     statePg.xl = xn;
                     statePg.yl = yn;
-                    statePg.runningWidth = xn;
+                    statePg.runningWidth = 0;
                     statePg.xRunning = xn;
                     statePg.yRunning = yn;
 
@@ -568,9 +558,6 @@ export class PDFContentExtractor {
                     // 1. Next line, normal text
                     // 2. Next line, inside bibliography
                     // 3. Same line
-                    // if (!stateDoc.inBibliography && 
-                    //     ((withinLineBounds && x <= 0) || 
-                    //         (Math.abs(yChange) < 0.1))) {
                     if (statePg.positionRunningText != null && 
                         ((!statePg.blockquote && xn <= statePg.xOffsetFromMargin + JITTER) || 
                             (statePg.blockquote && xn >= statePg.xOffsetBlockquote - JITTER)) && 
@@ -606,11 +593,8 @@ export class PDFContentExtractor {
 
                     }
 
-
                     statePg.superscript = statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
 
-                    // if (Math.abs(statePg.yl - yn) > 1.0) 
-                    //     statePg.xOffsetFromMargin = xn;
                     statePg.xll = statePg.xl;
                     statePg.xl = xn;
                     statePg.yl = yn;
@@ -623,7 +607,8 @@ export class PDFContentExtractor {
                     statePg.yl += statePg.yOffset;
                     statePg.xRunning = statePg.xl;
                     statePg.yRunning += statePg.yOffset;
-                    log(j, i, {fund: "Next line", i, yRunning: statePg.yRunning, yOffset: statePg.yOffset, yScale: statePg.yScale, yl: statePg.yl})
+                    if (DEBUG_PAGE == j)
+                        log(j, i, {fund: "Next line", i, yRunning: statePg.yRunning, yOffset: statePg.yOffset, yScale: statePg.yScale, yl: statePg.yl})
                 }
                 else if (fnType === this.pdfjs.OPS.showText) {
                     
@@ -634,29 +619,29 @@ export class PDFContentExtractor {
                     for (let k = 0; k < chars.length; k++) {
                         const c = chars[k];
                         if (c.unicode !== undefined) {
-                            // if (c.unicode.toString().match(/\s/)) 
                             if (c.unicode === ' ') 
                                 spaceCount++;
                             else
                                 spaceCount = 0;
                             if (spaceCount < 2) {
                                 bufferText += c.unicode;
-                                if (c.unicode !== ' ') 
-                                    localWidth += c.width;
-                                else
-                                    localWidth += 100;
+                                localWidth += c.width;
+                                // if (c.unicode !== ' ') 
+                                //     localWidth += c.width;
+                                // else
+                                //     localWidth += 100;
                             }
                         }
                         else {
                             const code = parseFloat(c);
                             if (code < -100 && spaceCount < 2) {
                                 spaceCount++;
-                                localWidth += Math.abs(code);
                                 bufferText += ' ';
                             }
                             else {
                                 spaceCount = 0;
                             }
+                            localWidth += Math.abs(code);
                         }
                     }
 
@@ -670,30 +655,37 @@ export class PDFContentExtractor {
                     if (statePg.runningText.length == 0 && bufferText.trim().length == 0) 
                         bufferText = '';
 
-                    // bufferText = bufferText.replace(/\s+/g, ' ');
-    
                     // Set new running width
                     if (statePg.newLine)
                         statePg.runningWidth = statePg.xRunning;
-                    statePg.runningWidth = statePg.runningWidth + (Math.abs(statePg.fontScale) * localWidth / 1000);
 
                     if (statePg.newLine && 
                         statePg.runningText.length > 0 && 
                         !statePg.runningText.endsWith(' ') && 
                         !statePg.runningText.endsWith('\n') && 
-                        bufferText.trim().length > 0) 
+                        bufferText.trim().length > 0) {
+
                         statePg.runningText += ' ';
+                        statePg.runningWidth += Math.abs(statePg.fontTransform);
+                        
+                    }
+                        
                        
                     if (!statePg.newLine && 
                         (
-                            statePg.xl > statePg.runningWidth
+                            statePg.xl > statePg.runningWidth * 10.0 + statePg.xOrigin + statePg.xOffset
                             || 
                             statePg.xl < statePg.xll
                         ) && 
                         statePg.runningText.trim().length > 0 && 
                         !statePg.runningText.endsWith(' ') && 
-                        !statePg.runningText.endsWith('==')) 
+                        !statePg.runningText.endsWith('==')) {
+
                         statePg.runningText += ' '; 
+                        statePg.runningWidth += Math.abs(statePg.fontTransform);
+
+                    }
+                        
                     
                     if (statePg.fontFaceChange) {
                         // statePg.runningText += ' '; 
@@ -713,9 +705,11 @@ export class PDFContentExtractor {
                         statePg.runningText = statePg.runningText.substring(0, statePg.runningText.length - 2);
                     else if (bufferText.endsWith('- '))
                         bufferText = bufferText.substring(0, bufferText.length - 1);
-                    
+
+                    statePg.runningWidth = statePg.runningWidth + (Math.abs(statePg.fontTransform) * localWidth / 1000);
+
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))  
-                        console.log({command: 'showText', lw: localWidth, ft: (Math.abs(statePg.fontScale) * localWidth / 1000), xOffset: statePg.xOffset, width: statePg.width, xll: statePg.xll, xl: statePg.xl, runningWidth: statePg.runningWidth, bufferText});
+                        console.log({command: 'showText', lw: localWidth, ft: statePg.fontTransform, wc: (Math.abs(statePg.fontTransform) * localWidth / 1000), xOrigin: statePg.xOrigin, xOffset: statePg.xOffset, width: statePg.width, xll: statePg.xll, xl: statePg.xl, runningWidth: statePg.runningWidth, bufferText});
 
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
@@ -807,11 +801,11 @@ export class PDFContentExtractor {
             y-ordering would produce: a, b, c, d
             (x+width)-then-y ordering would produce: a, b, d, c
             */
-            statePg.objPositions = statePg.objPositions.sort((a, b) => {                
-                let yDiff = b.y - a.y;
-                let xDiff = a.x - b.x;
-                return (yDiff === 0 ? xDiff : yDiff);
-            });
+            // statePg.objPositions = statePg.objPositions.sort((a, b) => {                
+            //     let yDiff = b.y - a.y;
+            //     let xDiff = a.x - b.x;
+            //     return (yDiff === 0 ? xDiff : yDiff);
+            // });
             let objPositionsNew : PDFObjectPosition[] = [];
             // Tries to re-sort page objects to handle:
             // 1. Dual columns (where items with higher y values in a second column should come *after* all items in a first column)
@@ -823,21 +817,25 @@ export class PDFContentExtractor {
                     let b = statePg.objPositions[k];
                     let bxExtent = b.x + b.width;
                     if (a.x > bxExtent && 
-                        a.x > pageWidth * 0.4
-                        && (a.y < pageHeight * 0.9 && a.y > pageHeight * 0.1)
+                        a.x > pageWidth * COLUMN_WIDTH_THRESHOLD
+                        && (a.y < pageHeight * PAGE_FOOTER_THRESHOLD && a.y > pageHeight * PAGE_HEADER_THRESHOLD)
                         ) {
-                        if (!objPositionsNew.contains(b)) {
+                        if (!objPositionsNew.includes(b)) {
                             objPositionsNew.push(b);
                             swappingStart = k;
                         }
                     }
                 }
-                if (!objPositionsNew.contains(a))
+                if (!objPositionsNew.includes(a))
                     objPositionsNew.push(a);
             }
 
-            if (j == DEBUG_PAGE)
+            if (j == DEBUG_PAGE) {
+                console.log(statePg.objPositions)
                 console.log(objPositionsNew)
+                console.log(page.view)
+            }
+                
 
             let mdStrings = objPositionsNew.map((pos) => { return pos.format(); });
 
@@ -851,25 +849,9 @@ export class PDFContentExtractor {
             mdString = mdString.replaceAll(/<\/sup>(\**)\s(\**)<sup>/g, ' ');
             mdString = mdString.replaceAll(/<\/sup><sup>/g, '');
 
-            if (j == DEBUG_PAGE)  {
-                // console.log("textContent", textContent);
-                console.log('statePg.objPositions', statePg.objPositions);
-                console.log('objPositionsNew', objPositionsNew);
-                console.log('textItems', textItems);
-                console.log('mdString', mdString);
-                // objPositions.forEach((obj) => {
-                //     let o = {str: obj.obj, x: obj.x, w: obj.width, e: obj.x + obj.width,  y: obj.y}
-                //     console.log(`\n`);
-                //     log(o);
-                // })
-            }
-
             const pageOutput = this.templatePage.render({ pageNo: j, markdownOutput: mdString });
             await vault.append(newFile, pageOutput);
 
-            if (DEBUG_PAGE == j) {
-                console.log(page.view)
-            }
         }
 
         // Add any footnotes 
