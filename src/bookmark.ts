@@ -8,7 +8,6 @@ import {
 import { TopicLinkingSettings } from './settings';
 
 
-
 export class BookmarkContentExtractor {
     generatedPath: string;
     bookmarkPath: string;
