@@ -1,7 +1,7 @@
-export const DEBUG_PAGE : number = 2;
+export const DEBUG_PAGE : number = 0;
 export const DEBUG_PAGE_MAX : number = 0;
 export const DEBUG_ITEM_START : number = 0;
-export const DEBUG_ITEM_END : number = 100;
+export const DEBUG_ITEM_END : number = 0;
 
 // https://simplernerd.com/js-console-colors/
 export const Log = {
