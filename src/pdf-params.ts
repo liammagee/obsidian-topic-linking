@@ -19,7 +19,7 @@ export const COORD_TOLERANCE = .51;
 // Constants for detecting line change
 // Work on a way to calculate this dynamically for double-spaced texts
 export const LINE_HEIGHT_MIN = -0.75;
-export const LINE_HEIGHT_MAX = -1.5;
+export const LINE_HEIGHT_MAX = -1.75;
 
 // Constants for detecting second column objects in multi column layout
 export const COLUMN_WIDTH_THRESHOLD = 0.4;

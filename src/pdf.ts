@@ -345,6 +345,11 @@ export class PDFContentExtractor {
                         statePg.yRunning = statePg.transform[5];
                     }
                 }
+                else if (fnType === this.pdfjs.OPS.save) {
+                    statePg.transforms.push(null);
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                        log(j, i, { fn: 'Save', t: statePg.transforms });
+                }
                 else if (fnType === this.pdfjs.OPS.transform) {
                     let x = args[4];
                     let y = args[5];
@@ -362,7 +367,14 @@ export class PDFContentExtractor {
                         statePg.transform = args;
                     }
                     // statePg.transform = args;
-                    statePg.transforms[statePg.transforms.length - 1] = statePg.transform;
+                    const tn = [1, 0, 0, 1, 0, 0];
+                    tn[0] = args[0];
+                    tn[1] = args[1];
+                    tn[2] = args[2];
+                    tn[3] = args[3];
+                    tn[4] = args[4];
+                    tn[5] = args[5];
+                    statePg.transforms[statePg.transforms.length - 1] = tn;
 
                     const xScale = statePg.transform[0];
                     const yScale = statePg.transform[3];
@@ -373,31 +385,37 @@ export class PDFContentExtractor {
                     statePg.xRunning = statePg.xOrigin;
                     statePg.yRunning = statePg.yOrigin;
 
-                    log(j, i, { fn: 'Transform', width: statePg.width, fontScale: statePg.fontScale, fnType, x, y, xOrigin: statePg.xOrigin, yOrigin: statePg.yOrigin, xl: statePg.xl, yl: statePg.yl  });
-                }
-                else if (fnType === this.pdfjs.OPS.save) {
-                    statePg.transforms.push(null);
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log("SAVE", statePg.xOrigin, statePg.transforms);
+                        log(j, i, { fn: 'Transform', t: statePg.transforms, ti: statePg.transform });
                 }
                 else if (fnType === this.pdfjs.OPS.restore) {
                     const t = statePg.transforms.pop();
                     if (t != null) {
                         const xScale = t[0];
                         const yScale = t[3];
-                        const x = t[4];
-                        const y = t[5];
-                        // statePg.fontScale /= yScale;
+                        let x = t[4];
+                        let y = t[5];
+                        x = t[0] * x + t[1] * y;
+                        y = t[2] * x + t[3] * y;
                         statePg.xScale /= xScale;
                         statePg.yScale /= yScale;
                         statePg.xOrigin -= x;
                         statePg.yOrigin -= y;
                         statePg.xRunning = statePg.xOrigin;
                         statePg.yRunning = statePg.yOrigin;
-                        statePg.transform = statePg.transforms[statePg.transforms.length - 1];
+                        statePg.transform = [1,0,0,1,0,0];
+                        for (let k = 0; k < statePg.transforms.length; k++) {
+                            const tn = statePg.transforms[k];
+                            if (tn != null) {
+                                statePg.transform[0] *= tn[0];
+                                statePg.transform[1] *= tn[1];
+                                statePg.transform[2] *= tn[2];
+                                statePg.transform[3] *= tn[3];
+                            }
+                        }
                     }
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log("RESTORE", statePg.fontScale, t, statePg.transforms);
+                        log(j, i, { fn: 'Restore', t: statePg.transforms, ti: statePg.transform });
                 }
                 else if (fnType === this.pdfjs.OPS.setFont) {
                     // processing font - look up from commonObjs
@@ -520,7 +538,7 @@ export class PDFContentExtractor {
 
                     statePg.superscript = statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log( {i, pos: statePg.positionRunningText, newBlock, xl: statePg.xl, fontTransformMax, yChange, modeTextHeight: stateDoc.modeTextHeight, fontTransform: statePg.fontTransform, args, xn, yn, xOffsetFromMargin: statePg.xOffsetFromMargin, withinLineBounds } );
+                        console.log( {i, withinLineBounds, fontScale: statePg.fontScale, newBlock, xl: statePg.xl, fontTransformMax, yChange, modeTextHeight: stateDoc.modeTextHeight, fontTransform: statePg.fontTransform, args, xn, yn, xOffsetFromMargin: statePg.xOffsetFromMargin, withinLineBounds } );
                     statePg.xll = statePg.xl;
                     statePg.xl = xn;
                     statePg.yl = yn;
@@ -546,7 +564,7 @@ export class PDFContentExtractor {
                     let xn:number = statePg.xRunning + statePg.xOffset;
                     let yn:number = statePg.yRunning + statePg.yOffset;
                 
-                    let yChange : number = (yn - statePg.yl ) / statePg.yScale;
+                    let yChange : number = (yn - statePg.yl ) / statePg.fontTransform;
                     statePg.newLine = false;
 
                     let withinLineBounds = statePg.bounds(yChange, 
@@ -588,10 +606,10 @@ export class PDFContentExtractor {
                     else {
 
                         this.completeObject(stateDoc, statePg, xn, yn, statePg.width, statePg.yl);
-                        if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                            log(j, i, {fnType, sss: statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, ss: stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, t: statePg.transform, i, xOffsetFromMargin: statePg.xOffsetFromMargin, x, xScale: statePg.xScale, y, yScale: statePg.yScale, fontScale: statePg.fontScale, xRunning: statePg.xRunning, yRunning: statePg.yRunning, xn, yn, xl: statePg.xl, yl: statePg.yl, xll: statePg.xll,   yChange});
 
                     }
+                    if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
+                        log(j, i, {fnType, withinLineBounds, max:stateDoc.lineSpacingEstimateMax, min: stateDoc.lineSpacingEstimateMin, sss: statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, ss: stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, t: statePg.transform, i, xOffsetFromMargin: statePg.xOffsetFromMargin, x, xScale: statePg.xScale, y, yScale: statePg.yScale, fontScale: statePg.fontScale, xRunning: statePg.xRunning, yRunning: statePg.yRunning, xn, yn, xl: statePg.xl, yl: statePg.yl, xll: statePg.xll,   yChange});
 
                     statePg.superscript = statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
 
