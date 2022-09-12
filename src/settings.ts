@@ -416,6 +416,7 @@ export class TopicLinkingSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h4', { text: 'Source Text Filtering' });
 
+        this.plugin.settings.fixedWordLength = this.plugin.settings.fixedWordLength || 1000;
         new Setting(containerEl)
             .setName('Fixed number of words')
             .setDesc('Enter the number of words to extract from the text. Overrides \'Percentage of Total Text\' below. Enter 0 to disable.')
