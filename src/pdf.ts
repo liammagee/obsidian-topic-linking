@@ -538,7 +538,8 @@ export class PDFContentExtractor {
 
                     statePg.superscript = statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        console.log( {i, withinLineBounds, fontScale: statePg.fontScale, newBlock, xl: statePg.xl, fontTransformMax, yChange, modeTextHeight: stateDoc.modeTextHeight, fontTransform: statePg.fontTransform, args, xn, yn, xOffsetFromMargin: statePg.xOffsetFromMargin, withinLineBounds } );
+                        console.log( {i, withinLineBounds, fontScale: statePg.fontScale, newBlock, xl: statePg.xl, fontTransformMax, yChange, modeTextHeight: stateDoc.modeTextHeight, fontTransform: statePg.fontTransform, args, xn, yn, xOffsetFromMargin: statePg.xOffsetFromMargin } );
+                    
                     statePg.xll = statePg.xl;
                     statePg.xl = xn;
                     statePg.yl = yn;
@@ -609,7 +610,7 @@ export class PDFContentExtractor {
 
                     }
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))
-                        log(j, i, {fnType, withinLineBounds, max:stateDoc.lineSpacingEstimateMax, min: stateDoc.lineSpacingEstimateMin, sss: statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, ss: stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, t: statePg.transform, i, xOffsetFromMargin: statePg.xOffsetFromMargin, x, xScale: statePg.xScale, y, yScale: statePg.yScale, fontScale: statePg.fontScale, xRunning: statePg.xRunning, yRunning: statePg.yRunning, xn, yn, xl: statePg.xl, yl: statePg.yl, xll: statePg.xll,   yChange});
+                        log(j, i, {fnType, sss: statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, ss: stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE, t: statePg.transform, i, xOffsetFromMargin: statePg.xOffsetFromMargin, x, xScale: statePg.xScale, y, yScale: statePg.yScale, fontScale: statePg.fontScale, xRunning: statePg.xRunning, yRunning: statePg.yRunning, xn, yn, xl: statePg.xl, yl: statePg.yl, xll: statePg.xll,   yChange});
 
                     statePg.superscript = statePg.fontTransform < stateDoc.modeTextHeight * SUBSCRIPT_DEVIANCE;
 
@@ -618,6 +619,15 @@ export class PDFContentExtractor {
                     statePg.yl = yn;
                     statePg.xRunning = xn;
                     statePg.yRunning = yn;
+
+                }
+                else if (fnType === this.pdfjs.OPS.setCharSpacing) {
+
+                    let xn:number = statePg.xl + statePg.xOffset;
+                    // statePg.xll = statePg.xl;
+                    // statePg.xl = xn;
+                    // statePg.xRunning = xn;
+                    // statePg.newLine = false;
 
                 }
                 else if (fnType === this.pdfjs.OPS.nextLine) {
@@ -724,10 +734,11 @@ export class PDFContentExtractor {
                     else if (bufferText.endsWith('- '))
                         bufferText = bufferText.substring(0, bufferText.length - 1);
 
-                    statePg.runningWidth = statePg.runningWidth + (Math.abs(statePg.fontTransform) * localWidth / 1000);
+                    statePg.sectionWidth = (Math.abs(statePg.fontTransform) * localWidth / 1000);
+                    statePg.runningWidth = statePg.runningWidth + statePg.sectionWidth;
 
                     if (j == DEBUG_PAGE && (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END))  
-                        console.log({command: 'showText', lw: localWidth, ft: statePg.fontTransform, wc: (Math.abs(statePg.fontTransform) * localWidth / 1000), xOrigin: statePg.xOrigin, xOffset: statePg.xOffset, width: statePg.width, xll: statePg.xll, xl: statePg.xl, runningWidth: statePg.runningWidth, bufferText});
+                        console.log({index: i, command: 'showText', lw: localWidth, ft: statePg.fontTransform, wc: (Math.abs(statePg.fontTransform) * localWidth / 1000), xOrigin: statePg.xOrigin, xOffset: statePg.xOffset, width: statePg.width, xll: statePg.xll, xl: statePg.xl, runningWidth: statePg.runningWidth, bufferText});
 
                     const leadingSpace = bufferText.startsWith(' ') ? ' ' : '';
                     const trailingSpace = bufferText.endsWith(' ') ? ' ' : '';
@@ -790,15 +801,15 @@ export class PDFContentExtractor {
                         console.log(`Error ${e}, working with ${file} on page ${j}, item ${i}`);
                     }
                 }
+            
             }
 
             // Release page resources.
             page.cleanup();
 
-
             if (statePg.runningText.trim() !== '') {
                 statePg.positionRunningText.obj = statePg.runningText;
-                log(j, 2599, {runningWidth: statePg.runningWidth, width:statePg.width});
+                // log(j, 2599, {runningWidth: statePg.runningWidth, width:statePg.width});
                 statePg.positionRunningText.width = statePg.width;
                 statePg.positionRunningText.height = statePg.yl - statePg.positionRunningText.y;
                 statePg.objPositions.push(statePg.positionRunningText);
@@ -849,7 +860,6 @@ export class PDFContentExtractor {
             }
 
             if (j == DEBUG_PAGE) {
-                console.log(statePg.objPositions)
                 console.log(objPositionsNew)
                 console.log(page.view)
             }

@@ -162,14 +162,18 @@ export class PDFPageState {
     fontTransform : number = 1;
     fontTransformLast : number = 1;
     width: number = 0;
-    
+    sectionWidth: number;
+
     associatedTextContent : any = null;
+
+
 
     resetPageState() {
         this.fontScaleLast = this.fontScale;
         this.fontScale = this.fontSize * this.yScale;
         this.fontTransformLast = this.fontTransform;
         this.fontTransform = this.fontScale;
+        
         if (this.transform) {
             // this.fontScale *= this.transform[3];
             this.fontTransform *= this.transform[3];
@@ -177,6 +181,7 @@ export class PDFPageState {
         
         // this.runningWidth = 0;
         this.width = 0;
+        this.sectionWidth = 0;
         this.fontFaceChange = false;
 
         this.newLine = false;
