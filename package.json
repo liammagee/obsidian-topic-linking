@@ -1,53 +1,54 @@
 {
-	"name": "obsidian-topic-linking",
-	"version": "0.1.7",
-	"type": "module",
-	"description": "This is a topic linking plugin for Obsidian (https://obsidian.md)",
-	"main": "main.js",
-	"scripts": {
-		"dev": "node esbuild.config.mjs",
-		"build": "node esbuild.config.mjs production"
-	},
-	"keywords": [
-		"PDF extraction",
-		"topic modelling",
-		"LDA"
-	],
-	"author": "Liam Magee",
-	"license": "MIT",
-	"devDependencies": {
-		"@types/micromatch": "^4.0.2",
-		"@types/natural": "^5.1.1",
-		"@types/node": "^16.11.6",
-		"@types/nunjucks": "^3.2.1",
-		"@typescript-eslint/eslint-plugin": "^5.2.0",
-		"@typescript-eslint/parser": "^5.2.0",
-		"builtin-modules": "^3.2.0",
-		"esbuild": "0.13.12",
-		"obsidian": "^0.14.1",
-		"tslib": "2.3.1",
-		"typescript": "4.4.4"
-	},
-	"dependencies": {
-		"@stdlib/datasets": "^0.0.14",
-		"@stdlib/datasets-sotu": "^0.0.7",
-		"@stdlib/datasets-stopwords-en": "^0.0.8",
-		"@stdlib/math-base-special-roundn": "^0.0.5",
-		"@stdlib/nlp": "^0.0.11",
-		"@stdlib/nlp-lda": "^0.0.6",
-		"@stdlib/nlp-porter-stemmer": "^0.0.6",
-		"@stdlib/string-lowercase": "^0.0.7",
-		"@stdlib/types": "^0.0.13",
-		"chalk": "^5.0.1",
-		"citeproc": "^2.4.62",
-		"fast-png": "^6.1.0",
-		"lodash": "^4.17.21",
-		"markdown-to-txt": "^2.0.0",
-		"micromatch": "^4.0.4",
-		"natural": "^5.1.13",
-		"nunjucks": "^3.2.3",
-		"pdfjs": "^2.4.7",
-		"sanitize-filename": "^1.6.3",
-		"stdlib": "^0.1.0"
-	}
+  "name": "obsidian-topic-linking",
+  "version": "0.1.7",
+  "type": "module",
+  "description": "This is a topic linking plugin for Obsidian (https://obsidian.md)",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production"
+  },
+  "keywords": [
+    "PDF extraction",
+    "topic modelling",
+    "LDA"
+  ],
+  "author": "Liam Magee",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/micromatch": "^4.0.2",
+    "@types/natural": "^5.1.1",
+    "@types/node": "^16.11.6",
+    "@types/nunjucks": "^3.2.1",
+    "@typescript-eslint/eslint-plugin": "^5.2.0",
+    "@typescript-eslint/parser": "^5.2.0",
+    "builtin-modules": "^3.2.0",
+    "esbuild": "0.13.12",
+    "obsidian": "^0.14.1",
+    "tslib": "2.3.1",
+    "typescript": "4.4.4"
+  },
+  "dependencies": {
+    "@stdlib/datasets": "^0.0.14",
+    "@stdlib/datasets-sotu": "^0.0.7",
+    "@stdlib/datasets-stopwords-en": "^0.0.8",
+    "@stdlib/math-base-special-roundn": "^0.0.5",
+    "@stdlib/nlp": "^0.0.11",
+    "@stdlib/nlp-lda": "^0.0.6",
+    "@stdlib/nlp-porter-stemmer": "^0.0.6",
+    "@stdlib/string-lowercase": "^0.0.7",
+    "@stdlib/types": "^0.0.13",
+    "@types/pdfjs-dist": "^2.10.378",
+    "chalk": "^5.0.1",
+    "citeproc": "^2.4.62",
+    "fast-png": "^6.1.0",
+    "lodash": "^4.17.21",
+    "markdown-to-txt": "^2.0.0",
+    "micromatch": "^4.0.4",
+    "natural": "^5.1.13",
+    "nunjucks": "^3.2.3",
+    "pdfjs-dist": "^3.11.174",
+    "sanitize-filename": "^1.6.3",
+    "stdlib": "^0.1.0"
+  }
 }
