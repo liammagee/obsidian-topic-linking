@@ -30,10 +30,12 @@ import {
     DEBUG_ITEM_START,
     DEBUG_ITEM_END,
     log } from './pdf-log';
-
+import * as PdfJS from "pdfjs-dist";
+import { TextItem } from 'pdfjs-dist/types/src/display/api';
+import { FontFaceObject } from 'pdfjs-dist/types/src/display/font_loader';
 
 export class PDFContentExtractor {
-    pdfjs: any;
+    pdfjs: typeof PdfJS;
     generatedPath: string;
     pdfPath: string;
     metadata: Record<string,any>;
@@ -201,7 +203,7 @@ export class PDFContentExtractor {
         let hAccumulator = 0, hCounter = 0, hLast = 0;
         let heightFrequencies: Record<number, number> = {};
 
-        let textItems : any[] = [];
+        let textItems : TextItem[] = [];
 
         // FIRST LOOP: extract annotations, and estimate line spacing and left margins
         for (let j = 1; j <= pdf.numPages && (DEBUG_PAGE_MAX <= 0 || j <= DEBUG_PAGE_MAX); j++) {
@@ -216,8 +218,8 @@ export class PDFContentExtractor {
             // For debugging
             if (j == DEBUG_PAGE) {
                 for (let i = 0; i < opList.fnArray.length; i++) {
-                    const fnType : any = opList.fnArray[i];
-                    const args : any = opList.argsArray[i];
+                    const fnType = opList.fnArray[i];
+                    const args = opList.argsArray[i];
                     if (i >= DEBUG_ITEM_START && i <= DEBUG_ITEM_END)
                         console.log(i, fnType, args)
                 }
@@ -225,7 +227,7 @@ export class PDFContentExtractor {
 
             yLast = 0;
             for (let i = 0; i < textContent.items.length; i++) {
-                const item = textContent.items[i];
+                const item = textContent.items[i] as TextItem;
 
                 if (j == DEBUG_PAGE)
                     textItems.push(item);
@@ -268,8 +270,8 @@ export class PDFContentExtractor {
             }
 
             for (let i = 0; i < opList.fnArray.length; i++) {
-                const fnType : any = opList.fnArray[i];
-                const args : any = opList.argsArray[i];
+                const fnType = opList.fnArray[i];
+                const args = opList.argsArray[i];
                 if (fnType === this.pdfjs.OPS.setTextMatrix) {
                     const x : number = args[4];
                     const y : number = args[5];
@@ -312,7 +314,7 @@ export class PDFContentExtractor {
             const page = await pdf.getPage(j);
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
-            const commonObjs = page.commonObjs._objs;
+            const commonObjs = page.commonObjs;
 
             // State variables
             stateDoc.currentPage = j;
@@ -331,8 +333,8 @@ export class PDFContentExtractor {
             // Loop through operators
             for (let i = 0; i < opList.fnArray.length; i++) {
             // for (let i = DEBUG_ITEM_START; i < DEBUG_ITEM_END; i++) {
-                const fnType : any = opList.fnArray[i];
-                const args : any = opList.argsArray[i];
+                const fnType = opList.fnArray[i];
+                const args = opList.argsArray[i];
 
 
                 if (fnType === this.pdfjs.OPS.beginText) {
@@ -421,14 +423,17 @@ export class PDFContentExtractor {
                     // processing font - look up from commonObjs
 
                     // Get font properties
-                    const font : any = commonObjs[args[0]];
-                    const fontDataName = font.data.name;
+                    const font: FontFaceObject & {
+						name: string,
+						data: null | Record<string, any>,
+					} = commonObjs.get(args[0]);
+                    const fontDataName = font.data?.name ?? font.name;
                     if (fontDataName !== statePg.fontNameLast && statePg.fontNameLast != null)
                         statePg.fontFaceChange = true;
                     statePg.fontNameLast = fontDataName;
 
-                    statePg.italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
-                    statePg.bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
+                    statePg.italic = (font.data?.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
+                    statePg.bold = (font.data?.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
                     statePg.fontSize = parseFloat(args[1]);
                     // Set this to 1, in case setTextMatrix is not called
                     if (statePg.yScale <= 0)
@@ -640,7 +645,7 @@ export class PDFContentExtractor {
                 }
                 else if (fnType === this.pdfjs.OPS.showText) {
 
-                    const chars : any[] = args[0];
+                    const chars = args[0];
                     let bufferText : string = '';
                     let localWidth : number = 0;
                     let spaceCount : number = 0;
@@ -676,8 +681,8 @@ export class PDFContentExtractor {
 
                     // Apply annotations
                     let transform = [1, 0, 0, 1, statePg.xl,  statePg.yl];
-                    let item : any = { width: statePg.width, height: statePg.fontScale, transform: transform, text: bufferText };
-                    let { stateDoc:PDFDocumentState, itemHighlights } : any = this.applyAnnotations(stateDoc, item, annotations);
+                    let item = { width: statePg.width, height: statePg.fontScale, transform: transform, text: bufferText };
+                    let { stateDoc:PDFDocumentState, itemHighlights } = this.applyAnnotations(stateDoc, item, annotations);
 
                     // Rules for new lines
                     if (statePg.runningText.length == 0 && bufferText.trim().length == 0)
@@ -890,7 +895,7 @@ export class PDFContentExtractor {
 
     private async createHeader(file: TFile, stateDoc: PDFDocumentState, vault: Vault, newFile: TFile) {
         let metadataContents = ``;
-        let itemMeta: any = {};
+        let itemMeta : Record<string, any> = {};
         if (this.metadata !== undefined && this.metadata[file.basename] !== undefined) {
             itemMeta = this.metadata[file.basename];
             itemMeta.bib = this.citeproc.makeBibliography([itemMeta.citationKey]);
@@ -1105,8 +1110,7 @@ export class PDFContentExtractor {
     }
 
 
-    private highlightHandler(stateDoc: PDFDocumentState,
-                                itemHighlights : any) {
+    private highlightHandler(stateDoc: PDFDocumentState, itemHighlights: ReturnType<typeof this.applyAnnotations>["itemHighlights"]) {
         let highlightedText = '';
         ({ stateDoc, highlightedText } = this.processHighlights(stateDoc, itemHighlights));
         if (stateDoc.highlightAccumulate) {
