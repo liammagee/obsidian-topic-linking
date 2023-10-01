@@ -312,7 +312,7 @@ export class PDFContentExtractor {
             const page = await pdf.getPage(j);
             const opList = await page.getOperatorList();
             const annotations = await page.getAnnotations();
-            const commonObjs = page.commonObjs._objs;
+            let commonObjs = page.commonObjs._objs;
 
             // State variables
             stateDoc.currentPage = j;
@@ -421,18 +421,21 @@ export class PDFContentExtractor {
                     // processing font - look up from commonObjs
 
                     // Get font properties
-                    const font : any = commonObjs[args[0]];
-                    const fontDataName = font.data.name;
-                    if (fontDataName !== statePg.fontNameLast && statePg.fontNameLast != null) 
-                        statePg.fontFaceChange = true;
-                    statePg.fontNameLast = fontDataName;
-
-                    statePg.italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
-                    statePg.bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
-                    statePg.fontSize = parseFloat(args[1]);
-                    // Set this to 1, in case setTextMatrix is not called
-                    if (statePg.yScale <= 0)
-                        statePg.yScale = 1;
+                    if (commonObjs !== undefined && commonObjs !== null) {
+                        const font : any = commonObjs[args[0]];
+                        const fontDataName = font.data.name;
+                        if (fontDataName !== statePg.fontNameLast && statePg.fontNameLast != null) 
+                            statePg.fontFaceChange = true;
+                        statePg.fontNameLast = fontDataName;
+    
+                        statePg.italic = (font.data.italic !== undefined ? font.data.italic : fontDataName.indexOf('Italic') > -1 || fontDataName.endsWith('I'));
+                        statePg.bold = (font.data.bold !== undefined ? font.data.bold : fontDataName.indexOf('Bold') > -1 || fontDataName.endsWith('B'));
+                        statePg.fontSize = parseFloat(args[1]);
+                        // Set this to 1, in case setTextMatrix is not called
+                        if (statePg.yScale <= 0)
+                            statePg.yScale = 1;
+    
+                    }
                 }
                 else if (fnType === this.pdfjs.OPS.setTextMatrix) {
 
